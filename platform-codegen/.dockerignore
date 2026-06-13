@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+venv
+.venv
+.dockerignore
+.gitignore
+*.log
+.DS_Store
