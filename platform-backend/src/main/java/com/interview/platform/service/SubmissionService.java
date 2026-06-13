@@ -9,7 +9,11 @@ import com.interview.platform.repository.ChallengeRepository;
 import com.interview.platform.repository.SubmissionRepository;
 import com.interview.platform.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.dao.DataAccessException;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +30,11 @@ public class SubmissionService {
     private final RabbitTemplate rabbitTemplate;
 
     @Transactional
+    @Retryable(
+            retryFor = {DataAccessException.class, AmqpException.class},
+            maxAttempts = 3,
+            backoff = @Backoff(delay = 1000, multiplier = 2.0)
+    )
     public Submission submit(UUID userId, String challengeId, Map<String, String> files) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
