@@ -1,18 +1,19 @@
-# High-Level Architecture
+# Architecture Documentation
 
-This document describes the architectural design of the Scalable Challenge Platform, focusing on its microservices, data flow, and resilience patterns.
+This document describes the architectural design of the Scalable Challenge Platform, focusing on its microservices, data flow, and browser-native execution model.
 
 ## System Diagram
 
 ```mermaid
 graph TD
     %% Frontend
-    UI[React Web UI] -- "HTTP/REST" --> Backend
+    UI[React Web UI] -- "WASM IDE" --> WC[WebContainers]
+    UI -- "REST/JSON" --> Backend
 
     %% Core Services
     subgraph "Core Platform"
         Backend[Java Platform Backend]
-        Codegen[Python Codegen Service]
+        Workers[Python Grading Workers]
     end
 
     %% Infrastructure
@@ -23,60 +24,65 @@ graph TD
         Storage[[MinIO / S3]]
     end
 
-    %% Challenge Apps
-    subgraph "Interview Environment"
-        GMN[Node.js Gold Master Node]
-        SQLite[(SQLite)]
-    end
-
     %% Interactions
-    Backend -- "Saves/Reads" --> DB
-    Backend -- "Triggers Jobs" --> Queue
-    Backend -- "Cache Metadata" --> Cache
+    Backend -- "User/Challenge Data" --> DB
+    Backend -- "Draft Persistence" --> Cache
+    Backend -- "Dispatch Jobs" --> Queue
     
-    Queue -- "Consumption" --> Codegen
-    Codegen -- "Saves Repo" --> Storage
-    Codegen -- "Retries on Fail" --> Cache
+    Workers -- "Consume Jobs" --> Queue
+    Workers -- "Isolated Docker" --> Sandbox[Docker Sandbox]
+    Workers -- "Post Results" --> Queue
     
-    Backend -- "Interacts" --> GMN
-    GMN -- "Transactional" --> SQLite
+    Backend -- "Listen for Results" --> Queue
+    UI -- "Download Boilerplate" --> Storage
 ```
 
 ---
 
-## Core Components
+## Core Architectural Pillars
 
-### 1. Platform Backend (Java / Spring Boot)
-The central orchestration layer. It handles user authentication, challenge management, and submission tracking.
-- **Data Store:** PostgreSQL (Relational data).
-- **Communication:** Publishes tasks to RabbitMQ to decouple long-running operations.
-- **Resilience:** Uses `spring-retry` for exponential backoff on transient database and message broker connection errors.
+### 1. Multi-Tenant User Isolation
+The platform is designed with a strict user-scoped persistence model.
+*   **Draft Isolation:** Every user has their own private workspace state. Drafts are keyed by `{userId}:{challengeId}` in both Redis (for fast access) and PostgreSQL (for long-term storage).
+*   **Concurrent Safety:** Users can work on the same challenge simultaneously without data leakage.
 
-### 2. Python Codegen Service (FastAPI)
-A specialized service for generating challenge environments.
-- **Logic:** Transforms "Gold Master" repositories into candidate-ready "Starter" and "Solution" zips.
-- **Cache:** Redis is used to store generated hashes to avoid redundant compute.
-- **Resilience:** Implements `tenacity` decorators to gracefully handle Redis unavailability.
+### 2. Browser-Native Execution (WebContainers)
+Unlike traditional platforms that rely on remote execution for IDE features, we leverage **WebContainers**.
+*   **WASM Node.js:** Runs a real Node.js environment directly in the browser.
+*   **WASM SQLite:** Challenges use `sql.js` for local storage, avoiding the need for native C++ bindings which are unsupported in browser environments.
+*   **Efficiency:** Reduces server load by moving development-time execution (npm install, running tests) to the client side.
 
-### 3. Gold Master Node (Node.js / Fastify)
-A reference implementation for challenge applications.
-- **Isolation:** Each challenge instance uses its own SQLite database to ensure data privacy and environment isolation.
-- **Resilience:** Uses `async-retry` for database transactions to handle `SQLITE_BUSY` errors during high-concurrency periods.
-
-### 4. Platform UI (React)
-A high-fidelity IDE experience in the browser.
-- **Technology:** Leverages WebContainers to run real Node.js environments directly in the candidate's browser without needing a remote backend for terminal/preview logic.
+### 3. Asynchronous Isolated Grading
+Final submissions are graded in a strictly controlled server-side environment.
+*   **JSON Transport:** Workspace files are sent as a flat JSON map (`Record<string, string>`) to minimize transport overhead.
+*   **Docker Sandboxing:** Python workers mount the submitted files into ephemeral, network-disabled Docker containers for validation.
+*   **Reliability:** The flow is fully decoupled via **RabbitMQ**, ensuring the system can handle large bursts of submissions.
 
 ---
 
-## Data Flow
-1. **Challenge Creation:** Admin defines a challenge via the UI. Backend stores metadata in PostgreSQL.
-2. **Environment Generation:** Backend sends a job to RabbitMQ. Codegen service consumes it, generates assets, and uploads them to S3/MinIO.
-3. **Candidate Session:** Candidate loads the UI. The UI pulls challenge assets from S3 and boots them into a local WebContainer.
-4. **Submission:** Candidate submits code. Backend stores the submission and triggers a grading workflow.
+## Service Breakdown
+
+### Platform Backend (Java / Spring Boot)
+The central orchestrator handling authentication, challenge metadata, and result aggregation.
+- **Resilience:** Implements `spring-retry` for exponential backoff on database and broker connections.
+- **Persistence:** PostgreSQL for relational data; Flyway for versioned migrations.
+
+### Python Grading Workers
+Stateless workers responsible for executing candidate code.
+- **Docker Executor:** Spawns language-specific containers (e.g., `node:20-alpine`) with strict resource limits (512MB RAM, 30s timeout).
+- **Communication:** Bi-directional RabbitMQ flow for job receipt and result publishing.
+
+### Platform UI (React / Vite)
+The modern "CodeForge" IDE.
+- **Features:** Resizable split-pane layout, markdown rendering for problem statements, and real-time terminal streaming.
+- **Hot-Patching:** Automatically migrates legacy challenge code to WASM-compatible formats on-the-fly to ensure environment stability.
 
 ---
 
-## Infrastructure Strategy
-- **Managed Services (Production):** AWS RDS (Postgres), Amazon MQ (RabbitMQ), ElastiCache (Redis), and S3 (Storage).
-- **Local Development:** Orchestrated via `docker-compose.yml` using Alpine-based container images.
+## Data Flow (End-to-End)
+1.  **Boot:** UI fetches challenge metadata from Backend and boilerplate ZIP from S3.
+2.  **Mount:** ZIP content is unzipped, WASM-patched, and mounted into a WebContainer.
+3.  **Work:** User code is auto-saved every 2 seconds to the Backend (Redis + Postgres).
+4.  **Execute:** `npm install` runs in the background; user runs tests locally in the browser.
+5.  **Submit:** UI sends the final file map to the Backend.
+6.  **Grade:** Backend queues a job; Worker executes it in Docker and returns the exit-code based score.

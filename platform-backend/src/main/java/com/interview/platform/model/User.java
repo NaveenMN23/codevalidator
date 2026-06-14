@@ -19,6 +19,11 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
+    @Column(unique = true)
+    private String username;
+
+    private String password;
+
     private String name;
 
     @Column(name = "created_at")

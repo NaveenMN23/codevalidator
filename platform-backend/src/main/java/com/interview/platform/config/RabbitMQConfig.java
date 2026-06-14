@@ -4,6 +4,7 @@ import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.TopicExchange;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -11,12 +12,18 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMQConfig {
 
     public static final String GRADING_QUEUE = "grading-queue";
+    public static final String GRADING_RESULTS_QUEUE = "grading-results-queue";
     public static final String EXCHANGE = "interview-exchange";
     public static final String ROUTING_KEY = "grading.key";
 
     @Bean
-    public Queue queue() {
+    public Queue gradingQueue() {
         return new Queue(GRADING_QUEUE, true);
+    }
+
+    @Bean
+    public Queue resultsQueue() {
+        return new Queue(GRADING_RESULTS_QUEUE, true);
     }
 
     @Bean
@@ -25,8 +32,8 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    public Binding binding(Queue queue, TopicExchange exchange) {
-        return BindingBuilder.bind(queue).to(exchange).with(ROUTING_KEY);
+    public Binding binding(@Qualifier("gradingQueue") Queue gradingQueue, TopicExchange exchange) {
+        return BindingBuilder.bind(gradingQueue).to(exchange).with(ROUTING_KEY);
     }
 
     @Bean

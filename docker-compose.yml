@@ -7,7 +7,7 @@ services:
       - "9001:9001"
     environment:
       MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password123
+      MINIO_ROOT_PASSWORD: password
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
@@ -23,11 +23,14 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    volumes:
+      - ./challenges/book-my-show/dist/node:/seed_data
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio:9000 admin password123;
+      /usr/bin/mc alias set myminio http://minio:9000 admin password;
       /usr/bin/mc mb myminio/challenges || true;
       /usr/bin/mc anonymous set download myminio/challenges;
+      /usr/bin/mc cp /seed_data/*.zip myminio/challenges/challenges/node/;
       exit 0;
       "
 
@@ -68,8 +71,8 @@ services:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: password
     ports:
-      - "5672:5672"   # AMQP protocol port
-      - "15672:15672" # Management UI port
+      - "5672:5672"
+      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -85,8 +88,12 @@ services:
       - "8080:8080"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/interview_db
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: password
       SPRING_DATA_REDIS_HOST: redis
       SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: admin
+      SPRING_RABBITMQ_PASSWORD: password
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,7 +110,7 @@ services:
     environment:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=admin
-      - MINIO_SECRET_KEY=password123
+      - MINIO_SECRET_KEY=password
     volumes:
       - ./challenges:/challenges
     depends_on:
@@ -117,6 +124,20 @@ services:
       - "5173:80"
     depends_on:
       - backend
+
+  workers:
+    build: ./platform-workers
+    container_name: platform_workers
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=password
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/grading_stages:/tmp/grading_stages
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
 volumes:
   minio_data:

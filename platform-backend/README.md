@@ -1,28 +1,32 @@
 # Platform Backend
 
-The core orchestration service for the Scalable Challenge Platform.
+The central orchestration service for the Scalable Challenge Platform.
 
 ## Tech Stack
 - **Language:** Java 21
-- **Framework:** Spring Boot 3.4.1
-- **Database:** PostgreSQL (with Flyway for migrations)
-- **Messaging:** Spring AMQP (RabbitMQ)
-- **Cache:** Spring Data Redis
+- **Framework:** Spring Boot 3.4+
+- **Database:** PostgreSQL (Relation), Redis (Cache/Fast-persistence)
+- **Messaging:** RabbitMQ
+- **Versioning:** Flyway
 
 ## Key Features
-- **Challenge Management:** CRUD operations for interview challenges.
-- **Submission Pipeline:** Handles candidate submissions and triggers grading jobs asynchronously.
-- **Resilience:** Implements `@Retryable` logic for transactional methods to handle transient infrastructure failures.
+- **Multi-Tenant Draft Service:** User-scoped persistent storage for in-progress work.
+- **Asynchronous Grading Dispatch:** Decoupled workflow via RabbitMQ for robust submission handling.
+- **Resilience:** Built-in retry logic for DB and Message Broker interactions.
+- **Admin API:** Endpoints for challenge management and draft control.
 
-## Development
+## Standards & Development
 
-### Setup
-Ensure you have PostgreSQL, Redis, and RabbitMQ running (e.g., via `docker compose up postgres redis rabbitmq`).
+### 1. User Isolation
+Every draft and submission MUST be keyed by `userId`. Never perform lookups on challenge IDs alone.
 
-### Run
+### 2. Resilience Pattern
+All external service calls (DB, Redis, RabbitMQ) must be wrapped in `@Retryable` to handle transient network issues.
+
+### 3. Asynchronous Results
+Grading results are consumed via `GradingResultListener`. The service updates the submission status and scores based on the asynchronous worker output.
+
+## Run with Docker
 ```bash
-./mvnw spring-boot:run
+docker compose up backend
 ```
-
-### Database Migrations
-Migrations are located in `src/main/resources/db/migration`. They run automatically on startup.

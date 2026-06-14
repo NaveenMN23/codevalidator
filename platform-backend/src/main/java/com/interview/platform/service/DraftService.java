@@ -72,4 +72,17 @@ public class DraftService {
 
         return files;
     }
+
+    @Transactional
+    public void deleteDraft(UUID userId, String challengeId) {
+        String redisKey = DRAFT_KEY_PREFIX + userId + ":" + challengeId;
+        redisTemplate.delete(redisKey);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Challenge challenge = challengeRepository.findById(challengeId)
+                .orElseThrow(() -> new RuntimeException("Challenge not found"));
+
+        draftRepository.deleteByUserAndChallenge(user, challenge);
+    }
 }

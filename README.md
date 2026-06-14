@@ -4,41 +4,50 @@ A robust, multi-service platform for hosting and managing technical interview ch
 
 For a detailed technical breakdown, see the **[Architecture Documentation](./ARCHITECTURE.md)**.
 
-## Architecture Overview
+## Key Features
+*   **WebContainer IDE:** High-fidelity browser-based coding environment with Node.js support.
+*   **WASM-Powered Storage:** Uses WASM SQLite (`sql.js`) for seamless local storage in the browser without native C++ bindings.
+*   **Background Installation:** Dependencies install automatically in the background as soon as you enter a challenge.
+*   **Modern UI:** Clean, viewport-locked IDE layout with resizable panels and terminal toggling.
+*   **Automated Auto-save:** User drafts are saved to the cloud every 2 seconds and isolated per-user.
 
-The system is built as a set of decoupled microservices:
-
-*   **[Platform Backend](./platform-backend):** Java (Spring Boot) service managing the core business logic, users, and submissions.
-*   **[Python Codegen](./platform-codegen):** Python (FastAPI) service responsible for generating challenge assets and repository structures.
-*   **[Platform UI](./platform-ui):** React (Vite) frontend providing a high-fidelity IDE experience using WebContainers.
-*   **[Gold Master Node](./challenges/book-my-show/apps/gold-master-node):** An example challenge service (Node.js) that simulates a real-world application environment for candidates.
-
-### Infrastructure
-- **Databases:** PostgreSQL (Main), Redis (Cache), SQLite (Challenge-local).
-- **Messaging:** RabbitMQ for asynchronous job processing.
-- **Storage:** S3-compatible storage (MinIO for local development).
-
-## Resilience & Reliability
-The platform implements transient error handling across all layers:
-- **Backend:** Automatic retries for DB and RabbitMQ connection issues using `spring-retry`.
-- **Codegen:** Exponential backoff for Redis operations via `tenacity`.
-- **Node Service:** Database transaction retries for `SQLITE_BUSY` errors using `async-retry`.
+## Service Map
+- **[Platform Backend](./platform-backend):** Java (Spring Boot) managing core logic, users, and asynchronous submissions.
+- **[Platform UI](./platform-ui):** React (Vite) frontend providing the "CodeForge" IDE experience.
+- **[Platform Workers](./platform-workers):** Python workers performing isolated grading in Docker sandboxes.
+- **[Codegen](./platform-codegen):** Service for generating challenge assets from reference repositories.
 
 ## Getting Started
 
 ### Prerequisites
 - Docker & Docker Compose
-- Java 21 (for local backend dev)
-- Python 3.11 (for local codegen dev)
-- Node.js 20+ (for UI and challenge dev)
+- Node.js 20+ (for local UI development)
+- Java 21 & Python 3.11 (for core service development)
 
 ### Running with Docker
-To start the entire platform:
 ```bash
-docker compose up --build
+# Start the entire platform
+docker compose up --build -d
+
+# Stop the environment
+docker compose down
+
+# Rebuild only specific services after changes
+docker compose up --build ui backend
 ```
 
 Access the UI at: `http://localhost:5173`
 
-## Contribution
-Please refer to the [PR Template](.github/pull_request_template.md) for contribution guidelines.
+## Engineering Standards
+
+### 1. User Data Isolation
+All persistent data (drafts, submissions) MUST be keyed by `userId`. Cross-user data leakage is a critical security failure.
+
+### 2. Browser Compatibility
+All challenge code must be browser-compatible. Native C++ modules (like `better-sqlite3`) are prohibited; use WASM alternatives (like `sql.js`) for local storage.
+
+### 3. Asynchronous Grading
+Grading must never block the main request thread. Use the RabbitMQ-based worker flow for all code execution and validation.
+
+### 4. Resilience
+External service calls (DB, Redis, RabbitMQ) MUST implement retry patterns (Spring Retry or Tenacity) to handle transient infrastructure blips.
