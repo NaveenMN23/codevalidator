@@ -7,4 +7,5 @@ import java.util.UUID;
 import java.util.Optional;
 public interface ChallengeDraftRepository extends JpaRepository<ChallengeDraft, UUID> {
     Optional<ChallengeDraft> findByUserAndChallenge(User user, Challenge challenge);
+    void deleteByUserAndChallenge(User user, Challenge challenge);
 }

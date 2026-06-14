@@ -1,36 +1,41 @@
-# Platform UI
+# Platform UI (CodeForge IDE)
 
-The browser-based IDE and administrative dashboard for the Scalable Challenge Platform.
+The high-fidelity, browser-native IDE for the Scalable Challenge Platform.
 
 ## Tech Stack
 - **Framework:** React 18+
 - **Build Tool:** Vite
-- **Core Technology:** WebContainers (for in-browser code execution)
-- **Language:** TypeScript
-- **Styling:** CSS Modules
+- **Core Engine:** WebContainers (WASM Node.js)
+- **Styling:** Tailwind CSS + Split.js
 
 ## Key Features
-- **File Explorer:** Navigation for challenge source code.
-- **Integrated Terminal:** Real-time terminal access via WebContainers.
-- **Live Preview:** Immediate feedback for changes made to the challenge code.
+*   **WASM-Native IDE:** Runs real Node.js and SQLite (`sql.js`) environments directly in the browser.
+*   **Viewport-Locked Layout:** Professional "clean" IDE experience with resizable panels.
+*   **Background Preparation:** Dependencies (`npm install`) trigger automatically on boot to minimize wait time.
+*   **Resilient Hot-Patching:** Automatically migrates legacy challenge code to browser-compatible WASM logic on-the-fly.
+*   **Continuous Save:** Auto-saves user work to the backend every 2 seconds.
 
 ## Development
 
-### Setup
+### Setup & Requirements
+This application requires specific security headers to enable SharedArrayBuffer (needed for WebContainers):
+- `Cross-Origin-Embedder-Policy: require-corp`
+- `Cross-Origin-Opener-Policy: same-origin`
+
+These are pre-configured in the `vite.config.ts` for local development and `nginx.conf` for Docker.
+
+### Run Locally
 ```bash
 npm install
-```
-
-### Run
-```bash
 npm run dev
 ```
 
-### Build
+### Build for Production
 ```bash
-npm run build
+docker compose up --build ui
 ```
 
-## Security
-This application utilizes WebContainers, which requires specific security headers (`Cross-Origin-Embedder-Policy: require-corp` and `Cross-Origin-Opener-Policy: same-origin`). When deploying, ensure these headers are served by your web server (the provided `nginx.conf` handles this in the Docker build).
-
+## Troubleshooting
+- **Dependencies Not Loading:** Check the terminal for background installation logs. Ensure your network allows access to the npm registry.
+- **Scrollbar Issues:** The IDE is designed to fit the viewport. If you see global scrollbars, ensure the parent container hasn't been modified with `min-h-screen`.
+- **WASM Bindings:** If you encounter `better-sqlite3` errors, click the **"Reset to Boilerplate"** button in the header to apply the latest WASM hot-patch.

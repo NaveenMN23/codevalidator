@@ -45,6 +45,12 @@ public class MainController {
         return ResponseEntity.ok(draft);
     }
 
+    @DeleteMapping("/drafts/{challengeId}")
+    public ResponseEntity<?> deleteDraft(@PathVariable String challengeId, @RequestParam UUID userId) {
+        draftService.deleteDraft(userId, challengeId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/submissions")
     public ResponseEntity<?> submitCode(@RequestBody SubmissionRequest request) {
         return ResponseEntity.accepted().body(submissionService.submit(request.getUserId(), request.getChallengeId(), request.getFiles()));

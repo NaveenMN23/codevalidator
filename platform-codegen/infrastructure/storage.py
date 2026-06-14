@@ -7,7 +7,7 @@ class StorageClient:
     def __init__(self):
         self.endpoint = os.environ.get('MINIO_ENDPOINT', 'http://localhost:9000')
         self.access_key = os.environ.get('MINIO_ACCESS_KEY', 'admin')
-        self.secret_key = os.environ.get('MINIO_SECRET_KEY', 'password123')
+        self.secret_key = os.environ.get('MINIO_SECRET_KEY', 'password')
         self.bucket = 'challenges'
         
         try:

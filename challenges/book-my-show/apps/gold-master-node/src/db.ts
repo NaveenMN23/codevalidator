@@ -1,5 +1,5 @@
 import { Kysely, SqliteDialect } from 'kysely';
-import Database from 'better-sqlite3';
+import initSqlJs from 'sql.js';
 
 interface UserTable {
   id: string;
@@ -39,11 +39,13 @@ interface DatabaseSchema {
   processed_webhooks: ProcessedWebhookTable;
 }
 
-const db = new Database('database.db');
+// Initialize WASM SQLite
+const SQL = await initSqlJs();
+const db = new SQL.Database();
 
 export const kysely = new Kysely<DatabaseSchema>({
   dialect: new SqliteDialect({
-    database: db,
+    database: db as any,
   }),
 });
 

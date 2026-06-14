@@ -31,7 +31,7 @@ public class SubmissionService {
 
     @Transactional
     @Retryable(
-            retryFor = {DataAccessException.class, AmqpException.class},
+            value = {DataAccessException.class, AmqpException.class},
             maxAttempts = 3,
             backoff = @Backoff(delay = 1000, multiplier = 2.0)
     )
