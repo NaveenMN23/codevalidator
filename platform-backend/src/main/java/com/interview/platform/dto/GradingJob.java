@@ -16,4 +16,9 @@ public class GradingJob {
     private String challengeId;
     private String language;
     private Map<String, String> files;
+    
+    // AI Evaluation fields
+    private boolean isPremium;
+    private Integer remainingTimeSeconds;
+    private String userType; // "B2C" or "B2B"
 }

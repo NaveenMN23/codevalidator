@@ -1,4 +1,4 @@
-import type { Challenge, SubmissionRequest } from './workspace.types';
+import type { Challenge, SubmissionRequest, GradingResult } from './workspace.types';
 
 export async function fetchChallenges(): Promise<Challenge[]> {
   const response = await fetch('/api/main/challenges');
@@ -35,12 +35,18 @@ export async function deleteDraft(challengeId: string, userId: string): Promise<
   if (!response.ok) throw new Error('Failed to delete draft');
 }
 
-export async function submitChallenge(payload: SubmissionRequest): Promise<any> {
+export async function submitChallenge(payload: SubmissionRequest): Promise<GradingResult> {
   const response = await fetch('/api/main/submissions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error('Submission failed');
+  return response.json();
+}
+
+export async function fetchSubmission(id: string): Promise<GradingResult> {
+  const response = await fetch(`/api/main/submissions/${id}`);
+  if (!response.ok) throw new Error('Failed to fetch submission result');
   return response.json();
 }

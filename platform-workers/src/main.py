@@ -26,6 +26,11 @@ def main():
     
     try:
         consumer_instance = GradingConsumer()
+        
+        # Warmup phase: Pre-pull common images
+        logger.info("Performing warmup: Pre-pulling common Docker images...")
+        consumer_instance.executor.pre_pull_images()
+        
         consumer_instance.start_consuming()
     except Exception as e:
         logger.exception(f"Fatal error: {e}")

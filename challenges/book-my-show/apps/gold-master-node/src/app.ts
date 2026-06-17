@@ -24,7 +24,6 @@ export const buildApp = () => {
       const result = await processPaymentWebhook(eventId, userId);
       return reply.send(result);
     } catch (error) {
-      console.error('Webhook Error:', error);
       return reply.status(500).send({ error: 'Internal Server Error' });
     }
   });
@@ -50,7 +49,6 @@ export const buildApp = () => {
       const result = await bookSeat(showId, seatNumber);
       return reply.send(result);
     } catch (error) {
-      console.error('API Error:', error);
       if (error instanceof ZodError) {
         return reply.status(400).send({ error: 'Validation failed', details: error.errors });
       }

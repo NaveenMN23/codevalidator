@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -17,4 +18,7 @@ public class GradingResult {
     private String output;
     private String errorOutput;
     private Integer exitCode;
+    
+    // Structured AI feedback (Correctness, Efficiency, Follow-up)
+    private Map<String, Object> feedback;
 }
