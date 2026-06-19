@@ -1,4 +1,11 @@
 {
+  "locked_files": [
+    "src/db.ts",
+    "src/app.ts",
+    "src/schemas.ts",
+    "src/index.ts",
+    "package.json"
+  ],
   "scenarios": {
     "beginner-broken-refund": {
       "title": "Book My Show: Broken Refund",

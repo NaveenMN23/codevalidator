@@ -6,3 +6,4 @@ python-multipart==0.0.9
 redis==5.0.4
 loguru==0.7.2
 tenacity==8.3.0
+requests==2.31.0

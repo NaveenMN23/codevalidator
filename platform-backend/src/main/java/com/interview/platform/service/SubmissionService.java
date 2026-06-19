@@ -35,7 +35,7 @@ public class SubmissionService {
             maxAttempts = 3,
             backoff = @Backoff(delay = 1000, multiplier = 2.0)
     )
-    public Submission submit(UUID userId, String challengeId, Map<String, String> files) {
+    public Submission submit(UUID userId, String challengeId, Map<String, String> files, boolean isPremium, Integer remainingTime, String userType) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         Challenge challenge = challengeRepository.findById(challengeId)
@@ -54,10 +54,18 @@ public class SubmissionService {
                 .challengeId(challengeId)
                 .language(challenge.getLanguage())
                 .files(files)
+                .isPremium(isPremium)
+                .remainingTimeSeconds(remainingTime)
+                .userType(userType)
                 .build();
 
         rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.ROUTING_KEY, job);
 
         return submission;
+    }
+
+    public Submission getSubmission(UUID submissionId) {
+        return submissionRepository.findById(submissionId)
+                .orElseThrow(() -> new RuntimeException("Submission not found"));
     }
 }

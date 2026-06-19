@@ -9,8 +9,9 @@ class ChallengeGenerator:
     def __init__(self, challenges_base_dir: Path):
         self.base_dir = challenges_base_dir
         self.ignore_patterns = [
-            'node_modules', 'dist', 'database.db', 'package-lock.json', 
-            'venv', '__pycache__', '.DS_Store', '.git'
+            'node_modules', 'dist', 'database.db', 'package-lock.json',
+            'venv', '__pycache__', '.DS_Store', '.git', 'vitest.config.ts',
+            'test-hidden',
         ]
 
     def _get_manifest(self, challenge_name: str) -> dict:
@@ -35,6 +36,7 @@ class ChallengeGenerator:
 
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             for root, dirs, files in os.walk(source_dir):
+                # Prune directories in-place to skip them
                 dirs[:] = [d for d in dirs if d not in self.ignore_patterns]
                 
                 for file in files:

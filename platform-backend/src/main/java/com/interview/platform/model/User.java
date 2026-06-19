@@ -26,6 +26,9 @@ public class User {
 
     private String name;
 
+    @Column(name = "is_premium")
+    private boolean isPremium;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

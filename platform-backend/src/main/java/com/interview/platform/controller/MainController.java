@@ -53,6 +53,18 @@ public class MainController {
 
     @PostMapping("/submissions")
     public ResponseEntity<?> submitCode(@RequestBody SubmissionRequest request) {
-        return ResponseEntity.accepted().body(submissionService.submit(request.getUserId(), request.getChallengeId(), request.getFiles()));
+        return ResponseEntity.accepted().body(submissionService.submit(
+            request.getUserId(), 
+            request.getChallengeId(), 
+            request.getFiles(),
+            request.isPremium(),
+            request.getRemainingTimeSeconds(),
+            request.getUserType()
+        ));
+    }
+
+    @GetMapping("/submissions/{id}")
+    public ResponseEntity<?> getSubmission(@PathVariable UUID id) {
+        return ResponseEntity.ok(submissionService.getSubmission(id));
     }
 }

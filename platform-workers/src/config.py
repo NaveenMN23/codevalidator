@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     docker_pids_limit: int = 50
     docker_timeout_seconds: int = 30
     
+    # AI Evaluation
+    anthropic_api_key: Optional[str] = None
+    enable_ai_evaluation: bool = False
+    
+    # Redis (for blueprints and semantic caching)
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    
     class Config:
         env_file = ".env"
 

@@ -26,13 +26,26 @@ public class GradingResultListener {
             submission.setStatus(result.getStatus());
             submission.setScore(result.getScore() != null ? result.getScore() : 0);
             
-            // Format logs to include stdout and stderr
-            String formattedLogs = String.format("Exit Code: %d\n\n--- Standard Output ---\n%s\n\n--- Error Output ---\n%s", 
-                    result.getExitCode(), 
-                    result.getOutput() != null ? result.getOutput() : "", 
-                    result.getErrorOutput() != null ? result.getErrorOutput() : "");
-            
+            // When errorOutput is empty, output is a refined one-at-a-time failure message
+            // (e.g. "❌ Failed: ...") — use it directly without boilerplate wrapping.
+            // For system errors and timeouts, errorOutput is present, so use the full format.
+            String errorOut = result.getErrorOutput() != null ? result.getErrorOutput() : "";
+            String formattedLogs;
+            if (errorOut.isBlank()) {
+                formattedLogs = result.getOutput() != null ? result.getOutput() : "";
+            } else {
+                formattedLogs = String.format("Exit Code: %d\n\n--- Standard Output ---\n%s\n\n--- Error Output ---\n%s",
+                        result.getExitCode(),
+                        result.getOutput() != null ? result.getOutput() : "",
+                        errorOut);
+            }
+
             submission.setLogs(formattedLogs);
+            
+            // Save AI feedback if present
+            if (result.getFeedback() != null) {
+                submission.setFeedback(result.getFeedback());
+            }
             
             submissionRepository.save(submission);
             log.info("Successfully updated submission {}", submission.getId());
