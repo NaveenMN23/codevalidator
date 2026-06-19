@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: platform-backend-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/interview_db}
+    username: ${DB_USERNAME:admin}
+    password: ${DB_PASSWORD:password}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:password}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-this-to-a-256-bit-secret-in-every-environment}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    readiness-state:
+      enabled: true
+    liveness-state:
+      enabled: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      database:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 5
+
+logging:
+  level:
+    org.hibernate.SQL: INFO
