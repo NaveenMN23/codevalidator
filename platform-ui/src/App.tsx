@@ -19,10 +19,10 @@ function App() {
   const isWorkspace = location.pathname.startsWith('/workspace');
 
   return (
-    <div className="h-screen bg-background text-slate-200 flex flex-col font-sans overflow-hidden">
+    <div className="h-screen bg-background text-text-main flex flex-col font-sans overflow-hidden">
       {!isWorkspace && <Navbar />}
       <main className={`flex-grow flex flex-col min-h-0 ${isWorkspace ? '' : 'pt-[72px]'}`}>
-        <Suspense fallback={<div className="flex h-full items-center justify-center bg-zinc-950 text-slate-400 font-medium">Loading...</div>}>
+        <Suspense fallback={<div className="flex h-full items-center justify-center bg-background text-text-muted font-medium">Loading...</div>}>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/login" element={<LoginPage />} />

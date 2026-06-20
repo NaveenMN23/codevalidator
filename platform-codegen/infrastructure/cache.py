@@ -23,12 +23,12 @@ class CacheClient:
             log.error(f"Failed to connect to Redis: {e}")
             self.redis = None
 
-    def get_cache_key(self, challenge_name: str, language: str, tags: list) -> str:
-        # Create a unique hash for the configuration
+    def get_cache_key(self, challenge_name: str, language: str, tags: list, source_hash: str = "") -> str:
         config = {
             "name": challenge_name,
             "lang": language,
-            "tags": sorted(tags)
+            "tags": sorted(tags),
+            "v": source_hash,  # changes when gold-master files change, auto-invalidates stale scaffolds
         }
         config_str = json.dumps(config, sort_keys=True)
         return hashlib.sha256(config_str.encode()).hexdigest()
