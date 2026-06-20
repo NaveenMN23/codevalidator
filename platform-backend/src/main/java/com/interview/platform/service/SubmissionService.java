@@ -41,10 +41,13 @@ public class SubmissionService {
         Challenge challenge = challengeRepository.findById(challengeId)
                 .orElseThrow(() -> new RuntimeException("Challenge not found"));
 
+        int attemptNumber = submissionRepository.countByUserIdAndChallengeId(userId, challengeId) + 1;
+
         Submission submission = Submission.builder()
                 .user(user)
                 .challenge(challenge)
                 .status("PENDING")
+                .attemptNumber(attemptNumber)
                 .build();
 
         submission = submissionRepository.save(submission);

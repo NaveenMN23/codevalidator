@@ -39,6 +39,13 @@ public class Submission {
     @Column(name = "feedback")
     private Map<String, Object> feedback;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "session_id")
+    private InterviewSession session;
+
+    @Column(name = "attempt_number")
+    private Integer attemptNumber = 1;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

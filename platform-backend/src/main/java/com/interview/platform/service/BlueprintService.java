@@ -38,6 +38,10 @@ public class BlueprintService {
         redisTemplate.opsForValue().set(cacheKey, blueprintJson, Duration.ofDays(7));
     }
 
+    public Optional<Map<String, Object>> findBlueprint(String challengeId) {
+        return getBlueprint(challengeId);
+    }
+
     @SuppressWarnings("unchecked")
     public Optional<Map<String, Object>> getBlueprint(String challengeId) {
         String cacheKey = BLUEPRINT_CACHE_PREFIX + challengeId;

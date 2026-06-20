@@ -63,6 +63,11 @@ minio_data/
 challenges/*/dist/
 challenges/**/*.zip
 
+# Local export of AI-generated challenges (dev only — not shared via git)
+generated/
+!generated/.gitkeep
+!generated/dist/.gitkeep
+
 # Misc
 .vercel
 .netlify

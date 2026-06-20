@@ -25,12 +25,17 @@ services:
         condition: service_healthy
     volumes:
       - ./challenges/book-my-show/dist/node:/seed_data
+      - ./generated/dist/challenges:/generated_challenges
+      - ./generated/dist/gold-masters:/generated_gm
     entrypoint: >
       /bin/sh -c "
       /usr/bin/mc alias set myminio http://minio:9000 admin password;
       /usr/bin/mc mb myminio/challenges || true;
       /usr/bin/mc anonymous set download myminio/challenges;
-      /usr/bin/mc cp /seed_data/*.zip myminio/challenges/node/;
+      /usr/bin/mc mb myminio/gold-masters || true;
+      /usr/bin/mc cp /seed_data/*.zip myminio/challenges/node/ 2>/dev/null || true;
+      /usr/bin/mc mirror --overwrite /generated_challenges/ myminio/challenges/ 2>/dev/null || true;
+      /usr/bin/mc mirror --overwrite /generated_gm/ myminio/gold-masters/ 2>/dev/null || true;
       exit 0;
       "
 
@@ -111,11 +116,20 @@ services:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=admin
       - MINIO_SECRET_KEY=password
+      - MINIO_BUCKET=challenges
+      - REDIS_HOST=redis
+      - BACKEND_URL=http://backend:8080
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=gpt-4o
+      - ENABLE_BLUEPRINT_GENERATION=true
+      - ENABLE_LLM=true
+      - LOCAL_EXPORT_PATH=/generated
     volumes:
-      - ./challenges:/challenges
+      - ./generated:/generated
     depends_on:
       - backend
       - minio
+      - redis
 
   ui:
     build: ./platform-ui
@@ -148,12 +162,16 @@ services:
       - RABBITMQ_USER=admin
       - RABBITMQ_PASSWORD=password
       - REDIS_HOST=redis
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=gpt-4o-mini
       - ENABLE_AI_EVALUATION=true
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=password
+      - BACKEND_URL=http://backend:8080
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/grading_stages:/tmp/grading_stages
-      - ./challenges:/challenges:ro
     depends_on:
       rabbitmq:
         condition: service_healthy

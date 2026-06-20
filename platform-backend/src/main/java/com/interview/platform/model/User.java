@@ -29,6 +29,10 @@ public class User {
     @Column(name = "is_premium")
     private boolean isPremium;
 
+    @Builder.Default
+    @Column(name = "user_type")
+    private String userType = "B2C";
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
