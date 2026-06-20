@@ -1,11 +1,11 @@
 :root {
-  --bg-primary: #09090b;
-  --bg-secondary: #18181b;
-  --bg-tertiary: #27272a;
-  --border-color: rgba(255, 255, 255, 0.06);
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --accent-color: #3b82f6;
+  --bg-primary: #111009;
+  --bg-secondary: #1C1B18;
+  --bg-tertiary: #252320;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --text-primary: #F0EFEA;
+  --text-secondary: #7A7973;
+  --accent-color: var(--primary);
 }
 
 .ide-container {
@@ -26,7 +26,7 @@
 }
 
 .gutter:hover {
-  background-color: rgba(59, 130, 246, 0.2);
+  background-color: color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 .gutter.gutter-horizontal {
@@ -42,12 +42,10 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-/* React Split requires the container to have flex direction */
 .flex {
   display: flex;
 }
 
-/* Ensure vertical split children are contained */
 .split-vertical > div {
   overflow: hidden;
   display: flex;
@@ -78,42 +76,10 @@
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: var(--primary);
 }
 
-/* Prose overrides for problem statement */
-.prose-xs {
-  font-size: 0.75rem;
-  line-height: 1.5;
-}
-
-.prose pre {
-  background-color: var(--bg-secondary) !important;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 12px !important;
-  font-size: 0.7rem;
-}
-
-.prose code {
-  color: var(--accent-color);
-  background-color: rgba(59, 130, 246, 0.1);
-  padding: 1px 3px;
-  border-radius: 3px;
-  font-size: 0.9em;
-}
-
-.prose h1, .prose h2, .prose h3 {
-  color: var(--text-primary);
-  margin-top: 1.2em;
-  margin-bottom: 0.4em;
-  font-weight: 600;
-}
-
-.prose p {
-  color: var(--text-secondary);
-  margin-bottom: 0.8em;
-}
+/* Prose rules are handled entirely by index.css with theme-aware CSS variables */
 
 /* Terminal custom styles */
 .xterm-viewport::-webkit-scrollbar {

@@ -73,47 +73,47 @@ export function Login() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh]">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="glass-panel p-8 w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-white mb-2">Welcome Back</h2>
-          <p className="text-slate-400 text-sm">Sign in to continue your progress</p>
+          <h2 className="text-2xl font-bold text-text-main mb-2">Welcome Back</h2>
+          <p className="text-text-muted text-sm">Sign in to continue your progress</p>
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-sm mb-6">
+          <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded-lg text-sm mb-6">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-400 mb-1">Email</label>
-            <input 
+            <label htmlFor="email" className="block text-sm font-medium text-text-muted mb-1">Email</label>
+            <input
               id="email"
-              type="email" 
+              type="email"
               {...register('email')}
-              className="w-full bg-background/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-primary transition-colors"
+              className="w-full bg-panel border border-border-main rounded-lg px-4 py-2.5 text-text-main focus:outline-none focus:border-primary transition-colors"
               placeholder="you@example.com"
             />
-            {errors.email && <p className="text-red-400 text-xs mt-1" role="alert">{errors.email.message}</p>}
+            {errors.email && <p className="text-red-500 text-xs mt-1" role="alert">{errors.email.message}</p>}
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-400 mb-1">Password</label>
-            <input 
+            <label htmlFor="password" className="block text-sm font-medium text-text-muted mb-1">Password</label>
+            <input
               id="password"
-              type="password" 
+              type="password"
               {...register('password')}
-              className="w-full bg-background/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-primary transition-colors"
+              className="w-full bg-panel border border-border-main rounded-lg px-4 py-2.5 text-text-main focus:outline-none focus:border-primary transition-colors"
               placeholder="••••••••"
             />
-            {errors.password && <p className="text-red-400 text-xs mt-1" role="alert">{errors.password.message}</p>}
+            {errors.password && <p className="text-red-500 text-xs mt-1" role="alert">{errors.password.message}</p>}
           </div>
-          
-          <button 
+
+          <button
             type="submit"
             disabled={isSubmitting}
             className="w-full bg-primary hover:bg-primary/90 text-white font-medium py-2.5 rounded-lg transition-colors mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -123,23 +123,23 @@ export function Login() {
 
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-white/10"></span>
+              <span className="w-full border-t border-border-main"></span>
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-[#0b0c10] px-2 text-slate-500">Dev Only</span>
+              <span className="bg-panel px-2 text-text-muted">Dev Only</span>
             </div>
           </div>
 
-          <button 
+          <button
             type="button"
             onClick={handleDevAutoLogin}
-            className="w-full bg-white/5 hover:bg-white/10 text-slate-300 font-medium py-2 rounded-lg border border-white/10 transition-colors"
+            className="w-full bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-text-muted font-medium py-2 rounded-lg border border-border-main transition-colors"
           >
             Dev Auto-Login
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-slate-400">
+        <div className="mt-6 text-center text-sm text-text-muted">
           Don't have an account? <Link to="/signup" className="text-primary hover:text-primary/80">Sign up</Link>
         </div>
       </motion.div>

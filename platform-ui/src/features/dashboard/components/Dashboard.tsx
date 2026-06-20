@@ -1,75 +1,32 @@
 import { useCallback, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { fetchChallenges } from '../../workspace/api';
 import type { Challenge } from '../../workspace/workspace.types';
-import { 
-  Code2, 
-  Trophy, 
-  Flame, 
-  BookOpen, 
-  ChevronRight,
-  Clock,
-  Layers,
-  Filter,
-  RefreshCcw
-} from 'lucide-react';
+import { Code2, Trophy, Flame, Layers, Filter, RefreshCcw, Search, X } from 'lucide-react';
 import { useAppStore } from '../../../store';
 
-interface ChallengeCardProps {
-  challenge: Challenge;
-  onClick: (id: string) => void;
-}
+const DIFFICULTY_OPTIONS = [
+  { value: 'ALL', label: 'All Levels' },
+  { value: 'BEGINNER', label: 'Beginner' },
+  { value: 'INTERMEDIATE', label: 'Intermediate' },
+  { value: 'ADVANCED', label: 'Advanced' },
+];
 
-function ChallengeCard({ challenge, onClick }: ChallengeCardProps) {
-  const handleClick = useCallback(() => {
-    onClick(challenge.id);
-  }, [challenge.id, onClick]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      onClick={handleClick}
-      className="glass-panel p-5 cursor-pointer group hover:border-primary transition-all duration-200"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div className="p-3 bg-background rounded-lg border border-border-main group-hover:border-primary group-hover:bg-primary/5 transition-colors">
-            <Layers className="text-primary" size={20} />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-text-main group-hover:text-primary transition-colors">
-              {challenge.title}
-            </h3>
-            <div className="flex items-center gap-4 mt-1">
-              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
-                challenge.difficulty === 'BEGINNER' ? 'text-green-600 bg-white border-green-200 dark:bg-background dark:border-green-900/50 dark:text-green-400' :
-                challenge.difficulty === 'INTERMEDIATE' ? 'text-blue-600 bg-white border-blue-200 dark:bg-background dark:border-blue-900/50 dark:text-blue-400' :
-                'text-red-600 bg-white border-red-200 dark:bg-background dark:border-red-900/50 dark:text-red-400'
-              }`}>
-                {challenge.difficulty}
-              </span>
-              <span className="text-xs text-text-muted flex items-center gap-1 uppercase font-bold tracking-tighter">
-                <Code2 size={12} className="text-primary" /> {challenge.language}
-              </span>
-            </div>
-          </div>
-        </div>
-        <ChevronRight size={20} className="text-text-muted group-hover:text-primary group-hover:translate-x-1 transition-all" />
-      </div>
-    </motion.div>
-  );
-}
+const DIFFICULTY_COLORS: Record<string, string> = {
+  BEGINNER: 'text-green-600 border-green-300 dark:text-green-400 dark:border-green-800',
+  INTERMEDIATE: 'text-primary border-primary/40',
+  ADVANCED: 'text-red-500 border-red-300 dark:border-red-800',
+};
 
 export function Dashboard() {
   const navigate = useNavigate();
   const gamificationEnabled = useAppStore(state => state.features.enableGamification);
-  
+
   const [difficultyFilter, setDifficultyFilter] = useState<string>('ALL');
   const [languageFilter, setLanguageFilter] = useState<string>('ALL');
+  const [search, setSearch] = useState('');
 
   const { data: challenges, isLoading, error } = useQuery({
     queryKey: ['challenges'],
@@ -78,22 +35,32 @@ export function Dashboard() {
 
   const languages = useMemo(() => {
     if (!challenges) return [];
-    const uniqueLangs = Array.from(new Set(challenges.map(c => c.language)));
-    return uniqueLangs.sort();
+    return Array.from(new Set(challenges.map((c: Challenge) => c.language))).sort() as string[];
   }, [challenges]);
 
   const filteredChallenges = useMemo(() => {
     if (!challenges) return [];
-    return challenges.filter(c => {
+    return challenges.filter((c: Challenge) => {
       const difficultyMatch = difficultyFilter === 'ALL' || c.difficulty === difficultyFilter;
       const languageMatch = languageFilter === 'ALL' || c.language === languageFilter;
-      return difficultyMatch && languageMatch;
+      const searchMatch = !search.trim() || c.title.toLowerCase().includes(search.toLowerCase());
+      return difficultyMatch && languageMatch && searchMatch;
     });
-  }, [challenges, difficultyFilter, languageFilter]);
+  }, [challenges, difficultyFilter, languageFilter, search]);
 
-  const handleStartChallenge = (id: string) => {
+  const difficultyCounts = useMemo(() => {
+    if (!challenges) return {} as Record<string, number>;
+    return challenges.reduce((acc: Record<string, number>, c: Challenge) => {
+      acc[c.difficulty] = (acc[c.difficulty] || 0) + 1;
+      return acc;
+    }, {});
+  }, [challenges]);
+
+  const handleStartChallenge = useCallback((id: string) => {
     navigate(`/workspace/${id}`);
-  };
+  }, [navigate]);
+
+  const hasFilters = difficultyFilter !== 'ALL' || languageFilter !== 'ALL' || search.trim() !== '';
 
   if (isLoading) {
     return (
@@ -115,149 +82,246 @@ export function Dashboard() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 w-full space-y-12">
-      {/* Welcome Header */}
-      <section className="bg-panel p-8 rounded-lg border border-border-main hover:border-primary transition-colors">
-        <h1 className="text-4xl font-black text-text-main mb-2 tracking-tight">Ready for a challenge?</h1>
-        <p className="text-text-muted text-lg">Choose a problem and start coding in your browser-native IDE.</p>
-      </section>
+    <div className="flex h-full overflow-hidden">
+      {/* Left Sidebar */}
+      <aside className="w-56 shrink-0 border-r border-border-main bg-panel flex flex-col overflow-y-auto">
+        <div className="px-5 py-5 border-b border-border-main shrink-0">
+          <h2 className="text-sm font-bold text-text-main">Challenges</h2>
+          <p className="text-xs text-text-muted mt-0.5">{challenges?.length ?? 0} available</p>
+        </div>
 
-      {gamificationEnabled && (
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <motion.div 
-            whileHover={{ y: -4 }}
-            className="glass-panel p-6 flex items-center space-x-4 border-l-4 border-l-orange-500"
-          >
-            <div className="p-3 bg-orange-500/10 rounded-xl">
-              <Flame className="text-orange-500" size={24} />
-            </div>
-            <div>
-              <div className="text-sm text-text-muted">Daily Streak</div>
-              <div className="text-xl font-bold text-text-main">12 Days</div>
-            </div>
-          </motion.div>
+        {/* Difficulty filter */}
+        <div className="px-5 py-4 border-b border-border-main shrink-0">
+          <div className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-3">Difficulty</div>
+          <div className="flex flex-col gap-0.5">
+            {DIFFICULTY_OPTIONS.map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setDifficultyFilter(value)}
+                className={`text-left text-xs font-medium px-3 py-1.5 rounded-md border-l-2 transition-all ${
+                  difficultyFilter === value
+                    ? 'border-primary text-primary bg-primary/5'
+                    : 'border-transparent text-text-main/70 hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          <motion.div 
-            whileHover={{ y: -4 }}
-            className="glass-panel p-6 flex items-center space-x-4 border-l-4 border-l-blue-500"
-          >
-            <div className="p-3 bg-blue-500/10 rounded-xl">
-              <Trophy className="text-blue-500" size={24} />
-            </div>
-            <div>
-              <div className="text-sm text-text-muted">Global Rank</div>
-              <div className="text-xl font-bold text-text-main">#452</div>
-            </div>
-          </motion.div>
-
-          <motion.div 
-            whileHover={{ y: -4 }}
-            className="glass-panel p-6 flex items-center space-x-4 border-l-4 border-l-purple-500"
-          >
-            <div className="p-3 bg-purple-500/10 rounded-xl">
-              <BookOpen className="text-purple-500" size={24} />
-            </div>
-            <div>
-              <div className="text-sm text-text-muted">Path Progress</div>
-              <div className="text-xl font-bold text-text-main">65%</div>
-            </div>
-          </motion.div>
-        </section>
-      )}
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Challenge List */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-xl font-black text-text-main flex items-center gap-2">
-              <Code2 size={24} className="text-primary" />
-              Available Challenges
-            </h2>
-            
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <select
-                  value={difficultyFilter}
-                  onChange={(e) => setDifficultyFilter(e.target.value)}
-                  className="appearance-none bg-panel border border-border-main text-text-main text-xs font-bold rounded-lg focus:ring-primary focus:border-primary block w-full pl-3 pr-8 py-2 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+        {/* Language filter */}
+        {languages.length > 0 && (
+          <div className="px-5 py-4 border-b border-border-main shrink-0">
+            <div className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-3">Language</div>
+            <div className="flex flex-col gap-0.5">
+              <button
+                onClick={() => setLanguageFilter('ALL')}
+                className={`text-left text-xs font-medium px-3 py-1.5 rounded-md border-l-2 transition-all ${
+                  languageFilter === 'ALL'
+                    ? 'border-primary text-primary bg-primary/5'
+                    : 'border-transparent text-text-main/70 hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'
+                }`}
+              >
+                All Languages
+              </button>
+              {languages.map((lang: string) => (
+                <button
+                  key={lang}
+                  onClick={() => setLanguageFilter(lang)}
+                  className={`text-left text-xs font-medium px-3 py-1.5 rounded-md border-l-2 transition-all ${
+                    languageFilter === lang
+                      ? 'border-primary text-primary bg-primary/5'
+                      : 'border-transparent text-text-main/70 hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'
+                  }`}
                 >
-                  <option value="ALL">All Levels</option>
-                  <option value="BEGINNER">Beginner</option>
-                  <option value="INTERMEDIATE">Intermediate</option>
-                  <option value="ADVANCED">Advanced</option>
-                </select>
-                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-text-muted">
-                  <Filter size={12} />
-                </div>
-              </div>
+                  {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-              <div className="relative">
-                <select
-                  value={languageFilter}
-                  onChange={(e) => setLanguageFilter(e.target.value)}
-                  className="appearance-none bg-panel border border-border-main text-text-main text-xs font-bold rounded-lg focus:ring-primary focus:border-primary block w-full pl-3 pr-8 py-2 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                >
-                  <option value="ALL">All Languages</option>
-                  {languages.map(lang => (
-                    <option key={lang} value={lang}>{lang.charAt(0).toUpperCase() + lang.slice(1)}</option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-text-muted">
-                  <Code2 size={12} />
-                </div>
+        {/* Gamification stats */}
+        {gamificationEnabled && (
+          <div className="px-5 py-4 space-y-3">
+            <div className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-1">Your Progress</div>
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-border-main bg-background">
+              <Flame className="text-orange-500 shrink-0" size={15} />
+              <div>
+                <div className="text-xs font-bold text-text-main">12 Days</div>
+                <div className="text-[10px] text-text-muted">Daily Streak</div>
               </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-border-main bg-background">
+              <Trophy className="text-primary shrink-0" size={15} />
+              <div>
+                <div className="text-xs font-bold text-text-main">#452</div>
+                <div className="text-[10px] text-text-muted">Global Rank</div>
+              </div>
+            </div>
+            <div className="p-3 rounded-lg border border-border-main bg-background">
+              <div className="flex justify-between items-center mb-2">
+                <div className="text-[10px] text-text-muted">Solved</div>
+                <div className="text-[10px] font-bold text-primary">24 / 150</div>
+              </div>
+              <div className="w-full h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(128,128,128,0.2)' }}>
+                <div className="bg-primary h-full w-[16%] rounded-full" />
+              </div>
+              <div className="text-[10px] text-text-muted mt-1.5">4,850 XP total</div>
+            </div>
+          </div>
+        )}
+        <div className="flex-grow" />
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-grow overflow-y-auto bg-background flex flex-col">
+        {/* Hero header — directly above the table */}
+        <div className="px-8 pt-10 pb-7 border-b border-border-main shrink-0">
+          {/* Title row */}
+          <div className="flex items-end justify-between gap-4 mb-6">
+            <div>
+              <h1 className="text-4xl font-light text-text-main tracking-tight leading-none">
+                Let's <span className="font-bold text-primary">Decode.</span>
+              </h1>
+              <p className="text-sm text-text-muted mt-2">
+                <AnimatePresence mode="wait">
+                  <motion.span
+                    key={filteredChallenges.length}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                    className="inline-block"
+                  >
+                    {hasFilters
+                      ? `${filteredChallenges.length} result${filteredChallenges.length !== 1 ? 's' : ''} found`
+                      : `${challenges?.length ?? 0} challenges ready to crack`}
+                  </motion.span>
+                </AnimatePresence>
+              </p>
+            </div>
+
+            {/* Difficulty quick-filter pills with live counts */}
+            <div className="flex items-center gap-2 shrink-0">
+              {(['BEGINNER', 'INTERMEDIATE', 'ADVANCED'] as const).map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDifficultyFilter(prev => prev === d ? 'ALL' : d)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+                    difficultyFilter === d
+                      ? 'bg-primary text-white border-primary shadow-sm'
+                      : `${DIFFICULTY_COLORS[d]} bg-transparent hover:bg-primary/5`
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    d === 'BEGINNER' ? 'bg-green-500' : d === 'INTERMEDIATE' ? 'bg-primary' : 'bg-red-500'
+                  }`} />
+                  {difficultyCounts[d] ?? 0} {d.charAt(0) + d.slice(1).toLowerCase()}
+                </button>
+              ))}
+              {hasFilters && (
+                <button
+                  onClick={() => { setDifficultyFilter('ALL'); setLanguageFilter('ALL'); setSearch(''); }}
+                  className="ml-1 text-xs text-text-muted hover:text-text-main transition-colors flex items-center gap-1"
+                >
+                  <X size={12} /> Clear
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            {filteredChallenges.length > 0 ? (
-              filteredChallenges.map((challenge: Challenge) => (
-                <ChallengeCard
-                  key={challenge.id}
-                  challenge={challenge}
-                  onClick={handleStartChallenge}
-                />
-              ))
-            ) : (
-              <div className="glass-panel p-12 text-center border-dashed border-2 bg-transparent shadow-none">
-                <Filter className="mx-auto text-text-muted mb-4 opacity-30" size={48} />
-                <h3 className="text-text-main font-bold text-lg mb-1">No challenges found</h3>
-                <p className="text-text-muted">Try adjusting your filters to find more problems.</p>
-                <button 
-                  onClick={() => { setDifficultyFilter('ALL'); setLanguageFilter('ALL'); }}
-                  className="mt-4 bg-primary text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
-                >
-                  Clear all filters
-                </button>
-              </div>
+          {/* Search bar */}
+          <div className="relative max-w-lg">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" size={15} />
+            <input
+              type="text"
+              placeholder="Search challenges..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-10 pr-10 py-2.5 rounded-full border border-border-main bg-panel text-text-main text-sm placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main transition-colors"
+              >
+                <X size={14} />
+              </button>
             )}
           </div>
         </div>
 
-        {/* Sidebar / Stats / Quick Actions */}
-        <div className="space-y-8">
-          <div className="glass-panel p-6 border-primary shadow-sm shadow-primary/10">
-            <h3 className="text-lg font-black text-text-main mb-4 flex items-center gap-2">
-              <Clock size={18} className="text-primary" />
-              Quick Progress
-            </h3>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest">
-                <span className="text-text-muted">Challenges Solved</span>
-                <span className="text-primary">24 / 150</span>
-              </div>
-              <div className="w-full bg-black/5 dark:bg-white/5 h-3 rounded-full overflow-hidden border border-border-main">
-                <div className="bg-primary h-full w-[16%] shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-              </div>
-              <div className="flex justify-between items-center text-sm pt-2 border-t border-border-main">
-                <span className="text-text-muted font-medium">Total Rating</span>
-                <span className="text-text-main font-black tracking-tight">4,850 XP</span>
-              </div>
-            </div>
-          </div>
+        {/* Table */}
+        <div className="px-6">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border-main">
+                <th className="py-3 text-left text-[10px] font-black uppercase tracking-widest text-text-muted w-10" />
+                <th className="py-3 text-left text-[10px] font-black uppercase tracking-widest text-text-muted">Problem / Challenge</th>
+                <th className="py-3 text-left text-[10px] font-black uppercase tracking-widest text-text-muted w-28">Language</th>
+                <th className="py-3 text-right text-[10px] font-black uppercase tracking-widest text-text-muted w-32">Difficulty</th>
+              </tr>
+            </thead>
+            <tbody>
+              <AnimatePresence>
+                {filteredChallenges.map((challenge: Challenge) => (
+                  <motion.tr
+                    key={challenge.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    onClick={() => handleStartChallenge(challenge.id)}
+                    className="group border-b border-border-main hover:bg-primary/[0.04] cursor-pointer transition-colors"
+                  >
+                    <td className="py-4 pl-1">
+                      <div className="w-4 h-4 rounded-full border border-border-main group-hover:border-primary transition-colors" />
+                    </td>
+                    <td className="py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-panel rounded-lg border border-border-main group-hover:border-primary group-hover:bg-primary/5 transition-all shrink-0">
+                          <Layers size={14} className="text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-text-main group-hover:text-primary transition-colors">
+                            {challenge.title}
+                          </div>
+                          <div className="h-0.5 w-40 rounded-full mt-1.5" style={{ backgroundColor: 'rgba(128,128,128,0.2)' }}>
+                            <div className="h-0.5 bg-primary rounded-full w-0" />
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4">
+                      <span className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+                        <Code2 size={11} className="text-primary shrink-0" />
+                        {challenge.language.charAt(0).toUpperCase() + challenge.language.slice(1)}
+                      </span>
+                    </td>
+                    <td className="py-4 text-right">
+                      <span className={`inline-block text-[10px] font-bold px-2.5 py-1 rounded-full border ${DIFFICULTY_COLORS[challenge.difficulty]}`}>
+                        {challenge.difficulty.charAt(0) + challenge.difficulty.slice(1).toLowerCase()}
+                      </span>
+                    </td>
+                  </motion.tr>
+                ))}
+              </AnimatePresence>
+
+              {filteredChallenges.length === 0 && !isLoading && (
+                <tr>
+                  <td colSpan={4} className="py-16 text-center">
+                    <Filter className="mx-auto text-text-muted mb-3 opacity-20" size={32} />
+                    <p className="text-sm font-bold text-text-main mb-1">No challenges found</p>
+                    <p className="text-xs text-text-muted">Try a different search or clear the filters.</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
