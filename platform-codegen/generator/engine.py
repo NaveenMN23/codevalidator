@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import zipfile
@@ -22,10 +23,21 @@ class ChallengeGenerator:
         with open(manifest_path, 'r') as f:
             return json.load(f)
 
-    def generate(self, challenge_name: str, language: str, tags: list) -> Path:
-        source_dir = self.base_dir / challenge_name / "apps" / f"gold-master-{language}"
+    def generate(
+        self,
+        challenge_name: str,
+        language: str,
+        tags: list,
+        tier: str = None,
+    ) -> Path:
+        """Generate a student-facing scaffold ZIP by stripping @strip-target blocks.
+
+        tier: if provided, reads from gold-master-{tier}-{language}/ instead of gold-master-{language}/
+        """
+        gold_master_dir = f"gold-master-{tier}-{language}" if tier else f"gold-master-{language}"
+        source_dir = self.base_dir / challenge_name / "apps" / gold_master_dir
         dist_dir = self.base_dir / challenge_name / "dist" / language
-        
+
         if not source_dir.exists():
             raise FileNotFoundError(f"Source directory {source_dir} not found")
 
@@ -63,6 +75,51 @@ class ChallengeGenerator:
 
         log.info(f"Generated challenge zip: {output_path}")
         return output_path
+
+    def generate_from_dict(
+        self,
+        files: dict,
+        scenario_tag: str,
+        manifest: dict,
+        language: str = "node",
+    ) -> io.BytesIO:
+        """Generate a student scaffold ZIP from in-memory skeleton files.
+
+        Replaces the stub throw/raise statement for this scenario with a TODO comment.
+        Other stubs are left as-is — showing the function signature without the answer.
+        Adds a scenario-specific README.
+        """
+        stub_patterns = {
+            "node": (
+                f"throw new Error('not implemented: {scenario_tag}');",
+                "// TODO: implement this function",
+            ),
+            "java": (
+                f'throw new UnsupportedOperationException("not implemented: {scenario_tag}");',
+                "// TODO: implement this method",
+            ),
+            "python": (
+                f'raise NotImplementedError("not implemented: {scenario_tag}")',
+                "# TODO: implement this function",
+            ),
+        }
+        target_stub, todo = stub_patterns.get(language, stub_patterns["node"])
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for rel_path, content in files.items():
+                if rel_path == "README.md":
+                    continue
+                content = content.replace(target_stub, todo)
+                zf.writestr(rel_path, content)
+
+            readme_content = self._build_readme(
+                manifest.get("challenge", "challenge"), [scenario_tag], manifest
+            )
+            zf.writestr("README.md", readme_content)
+
+        zip_buffer.seek(0)
+        return zip_buffer
 
     def _process_content(self, content: str, target_tags: list) -> str:
         # Pass 1: Strip code for any tag in target_tags

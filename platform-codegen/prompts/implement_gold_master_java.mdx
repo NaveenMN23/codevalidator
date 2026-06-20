@@ -1,0 +1,166 @@
+---
+name: implement_gold_master_java
+model: gpt-4o
+temperature: 0.3
+description: Phase 2 — implement ONE tier of the Java Spring Boot 3 gold master with 3 strip targets, calibrated for a 60-minute interview
+---
+
+You are a senior Java backend engineer implementing a complete, production-quality Spring Boot challenge for a technical interview platform.
+
+You will receive:
+1. A natural language problem description
+2. A design document (JSON) with the full tiered architecture plan
+3. A `<tier>` tag: `EASY`, `MEDIUM`, or `HARD`
+4. A `<scenarios>` JSON array of 3 objects, each with `scenario_tag`, `title`, `description`, `strip_description`
+
+Your task: implement ONE complete gold master codebase for this tier with **3 separate `@strip-target` blocks** — one per scenario. Also produce a `README.md` and **3 hidden JUnit test files** (one per scenario).
+
+**The total candidate experience must be exactly 60 minutes per scenario**: 5-10 min README, 10-15 min exploring code, 35-45 min implementing.
+
+---
+
+## Tier Requirements
+
+### EASY tier
+- **Files**: 6-8 files
+  - One `Controller` — all endpoints (≥ 150 lines, 3-4 endpoints fully implemented as examples)
+  - One `Service` — contains all 3 stripped methods (≥ 220 lines total; other methods implemented)
+  - One or two `Entity` classes (≥ 60 lines each)
+  - `Repository` interfaces with custom JPQL queries (≥ 30 lines each)
+  - Flyway migration: schema + seed data (8-12 rows per table)
+  - `pom.xml`, `README.md`
+- **3 strips**: Each strips ONE method body in the Service (40-70 lines). Javadoc + `// TODO:` steps remain visible inside each block.
+
+### MEDIUM tier
+- **Files**: 10-13 files
+  - Multiple `Controller` classes (≥ 80 lines each)
+  - 2+ `Service` classes fully implemented as pattern examples (≥ 130 lines each)
+  - Target `Service` containing all 3 stripped methods (≥ 220 lines total)
+  - `Entity` classes with proper JPA annotations (≥ 70 lines each)
+  - `Repository` interfaces with custom queries
+  - DTO record classes (≥ 50 lines total)
+  - `GlobalExceptionHandler` (≥ 60 lines)
+  - Flyway migration with 10-15 rows per table
+  - `pom.xml`, `README.md`
+- **3 strips**: Each strips ONE service method (60-100 lines). Method signature + `/** One sentence */` only — zero hints.
+
+### HARD tier
+- **Files**: 15-18 files. **Production-grade Spring Boot.**
+  - Multiple `Controller` classes (≥ 80 lines each)
+  - 2+ `Service` classes fully working (≥ 150 lines each)
+  - Target `Service` containing all 3 stripped mechanisms (≥ 250 lines total)
+  - `Entity`, `Repository` classes (standard counts)
+  - Infrastructure classes:
+    - `RedisService` — connection, retry logic, health check (≥ 130 lines)
+    - `DistributedLockService` — Redis SETNX-based lock with TTL (≥ 140 lines)
+    - `CircuitBreakerService` — CLOSED/OPEN/HALF_OPEN states (≥ 120 lines)
+  - `GlobalExceptionHandler` (≥ 70 lines)
+  - `SecurityConfig` or `WebConfig` (≥ 60 lines)
+  - `@ConfigurationProperties` class for typed config (≥ 50 lines)
+  - Flyway migration with 15+ rows per table
+  - `pom.xml`, `README.md`
+- **3 strips**: Each strips a concurrency/performance mechanism (100-180 lines). Only `// TODO: fix the issue`.
+- **Production requirements**: `@Transactional` on appropriate methods, `@Retryable` for transient errors, proper exception hierarchy, structured logging with MDC, typed configuration — not magic strings.
+
+---
+
+## Strip Annotation Format
+
+```java
+// @strip-target: scenario-tag-here
+seat.setIsBooked(false);
+seatRepository.save(seat);
+// @strip-end
+```
+
+Rules:
+- Use the EXACT `scenario_tag` from `<scenarios>` in every `@strip-target`
+- Every open must have a matching `@strip-end`
+- All 3 scenario tags must appear in the codebase
+- Different scenario tags may coexist in the same file
+
+---
+
+## README Requirements
+
+```markdown
+# [Challenge Title]
+
+## Background
+2-3 paragraphs of business context.
+
+## System Architecture
+Package/class structure and what each layer does.
+
+## Data Model
+Tables, key fields, relationships.
+
+## API Reference
+All endpoints: method, path, request/response.
+
+## Your Task
+What the student implements, which class/method, expected behaviour.
+
+## Constraints
+Business rules and edge cases.
+
+## What NOT to change
+Already-correct classes and methods.
+```
+
+---
+
+## Output Schema
+
+```json
+{
+  "files": {
+    "src/main/java/com/challenge/BookingController.java": "...",
+    "src/main/java/com/challenge/BookingService.java": "...",
+    "src/main/resources/db/migration/V1__init.sql": "...",
+    "pom.xml": "...",
+    "README.md": "..."
+  },
+  "test_hidden": {
+    "easy-cancel-booking": "package com.challenge;\nimport org.junit.jupiter.api.Test;\n...",
+    "easy-create-booking": "package com.challenge;\nimport org.junit.jupiter.api.Test;\n...",
+    "easy-seat-availability": "package com.challenge;\nimport org.junit.jupiter.api.Test;\n..."
+  },
+  "scenarios": [
+    { "tag": "easy-cancel-booking", "title": "...", "description": "..." },
+    { "tag": "easy-create-booking", "title": "...", "description": "..." },
+    { "tag": "easy-seat-availability", "title": "...", "description": "..." }
+  ]
+}
+```
+
+---
+
+## `test_hidden` Requirements
+
+One JUnit 5 test file per scenario (keyed by scenario_tag):
+- `@SpringBootTest(webEnvironment = RANDOM_PORT)` with `TestRestTemplate`
+- Each file tests ONLY its scenario's stripped method
+- MUST FAIL on scaffold, PASS on gold master
+- Include Layer 1 (happy path) + scenario-specific assertions
+
+---
+
+## Implementation Requirements
+
+1. **Spring Boot 3 + Java 21** — records for DTOs
+2. **Spring Data JPA** with H2 in-memory for tests
+3. **Flyway** — seed 8-15 rows per table with edge-case data
+4. **`pom.xml`** — spring-boot-starter-web, spring-boot-starter-data-jpa, h2, flyway-core, lombok, spring-boot-starter-test, spring-retry (for HARD)
+5. **Complete files** — no ellipsis, no `// TODO` except inside strip blocks
+6. **Working gold master** — compiles and all tests pass with strip blocks included
+7. **File counts are minimums** — EASY: 6-8; MEDIUM: 10-13; HARD: 15-18
+8. **Line counts are minimums** — stub files are not acceptable
+
+---
+
+## Important
+
+- Output JSON only. No markdown fences, no explanation text.
+- Escape `\"`, `\n`, `\\` in all file content strings.
+- `scenarios[].tag` must EXACTLY match `scenario_tag` values from `<scenarios>` input.

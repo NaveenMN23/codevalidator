@@ -1,88 +1,185 @@
-import requests
+from pathlib import Path
+from openai import OpenAI
+from config.settings import settings
 from infrastructure.logger import log
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-class LLMService:
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+_MAX_INPUT_TOKENS = 100_000  # warn at 80% of GPT-4o 128K input window
+
+_PRICE_PER_1M: dict[str, dict[str, float]] = {
+    "gpt-4o":             {"input": 2.50,  "cached": 1.25,  "output": 10.00},
+    "gpt-4o-mini":        {"input": 0.15,  "cached": 0.075, "output": 0.60},
+    "gpt-4o-2024-11-20":  {"input": 2.50,  "cached": 1.25,  "output": 10.00},
+}
+
+try:
+    import tiktoken
+    _enc = tiktoken.encoding_for_model("gpt-4o")
+except Exception:
+    _enc = None
+
+
+def _count_tokens(text: str) -> int:
+    if _enc is None:
+        return len(text) // 4  # rough fallback: ~4 chars per token
+    return len(_enc.encode(text))
+
+
+class LLMClient:
     def __init__(self):
-        self.enabled = True # Feature flag
-        self.backend_url = "http://platform-backend:8080/api/admin"
-    
-    def generate_gold_repo(self, prompt: str) -> str:
-        """
-        Stub for future LLM-driven Gold Master generation.
-        """
-        if not self.enabled:
-            log.warning("LLM generation is currently disabled.")
-            return "LLM generation is currently disabled."
-        return "Not implemented yet."
+        self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        if not self.client:
+            log.warning("OPENAI_API_KEY not set — LLM calls will fail until configured")
+        self._session_cost: float = 0.0
+        self._session_tokens: dict[str, int] = {"input": 0, "cached": 0, "output": 0}
 
-    def generate_blueprint(self, problem_id: str, challenge_name: str, language: str) -> dict:
-        """
-        Generates a Blueprint JSON for a given problem.
-        In production, this would call Claude 3.5 Sonnet or GPT-4o with the repo context.
-        """
-        if not self.enabled:
-            log.warning("LLM generation is currently disabled.")
-            return {}
+    def load_prompt(self, name: str) -> str:
+        """Load the body of a .mdx prompt file, stripping YAML frontmatter."""
+        path = PROMPTS_DIR / f"{name}.mdx"
+        if not path.exists():
+            raise FileNotFoundError(f"Prompt file not found: {path}")
+        content = path.read_text(encoding="utf-8")
+        if content.startswith("---"):
+            end = content.index("---", 3)
+            content = content[end + 3:].strip()
+        return content
 
-        log.info(f"Generating blueprint for {challenge_name} ({problem_id})")
-        
-        # This structure matches the "Required DTO" from the blueprint architecture document
-        blueprint = {
-            "problemId": problem_id,
-            "task": {
-                "taskType": "FEATURE_IMPLEMENTATION",
-                "title": challenge_name,
-                "description": f"Implement the core logic for {challenge_name}. Ensure all edge cases are handled.",
-                "constraints": [
-                    "Preserve O(n) time complexity",
-                    "Handle empty input cases"
-                ],
-                "difficulty": "MEDIUM",
-                "targetRole": "SDE-2",
-                "language": language,
-                "framework": "Spring Boot" if language == "java" else "Node.js",
-                "expectedComplexity": {
-                    "time": "O(n)",
-                    "space": "O(n)"
-                },
-                "concurrencyRequired": False
-            },
-            "repo": {
-                "targetFile": "src/main/java/com/example/Task.java" if language == "java" else "src/index.ts",
-                "relevantFiles": []
-            },
-            "followUpContext": {
-                "interviewerFocusAreas": [
-                    {
-                        "area": "CORRECTNESS",
-                        "scope": "Validation of input parameters and boundary conditions"
-                    }
-                ],
-                "expectedApproaches": [
-                    {
-                        "approach": "Iterative",
-                        "tradeoff": "Simple and space-efficient"
-                    }
-                ],
-                "followUpIntent": {
-                    "type": "EVALUATOR_DECIDES",
-                    "hint": "Ask about scaling the solution to larger datasets",
-                    "minimumTimeRemainingSeconds": 600
-                }
-            }
-        }
-        return blueprint
+    def _warn_token_budget(self, system_prompt: str, user_message: str, label: str) -> None:
+        total = _count_tokens(system_prompt) + _count_tokens(user_message)
+        log.info(f"[{label}] estimated input tokens: {total}")
+        if total > _MAX_INPUT_TOKENS * 0.8:
+            log.warning(f"[{label}] input is at {total / _MAX_INPUT_TOKENS:.0%} of token budget — consider pruning context")
 
-    def dispatch_blueprint(self, blueprint: dict):
-        """
-        Sends the generated blueprint to the backend for storage and caching.
-        """
-        try:
-            url = f"{self.backend_url}/blueprints"
-            response = requests.post(url, json=blueprint, timeout=10)
-            response.raise_for_status()
-            log.info(f"Successfully dispatched blueprint for {blueprint.get('problemId')}")
-        except Exception as e:
-            log.error(f"Failed to dispatch blueprint to {self.backend_url}: {e}")
+    def reset_session_cost(self) -> None:
+        self._session_cost = 0.0
+        self._session_tokens = {"input": 0, "cached": 0, "output": 0}
 
-llm_service = LLMService()
+    def _log_usage(self, response, label: str) -> None:
+        usage = response.usage
+        cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0)
+        non_cached_input = usage.prompt_tokens - cached
+
+        prices = _PRICE_PER_1M.get(settings.openai_model, _PRICE_PER_1M["gpt-4o"])
+        call_cost = (
+            non_cached_input / 1_000_000 * prices["input"]
+            + cached / 1_000_000 * prices["cached"]
+            + usage.completion_tokens / 1_000_000 * prices["output"]
+        )
+        self._session_cost += call_cost
+        self._session_tokens["input"] += non_cached_input
+        self._session_tokens["cached"] += cached
+        self._session_tokens["output"] += usage.completion_tokens
+
+        log.info(
+            f"[{label}] tokens — prompt: {usage.prompt_tokens} "
+            f"(cached: {cached}), completion: {usage.completion_tokens}, "
+            f"total: {usage.total_tokens} | "
+            f"cost: ${call_cost:.4f} (session total: ${self._session_cost:.4f})"
+        )
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True,
+    )
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_message: str,
+        label: str = "llm",
+        max_tokens_override: int | None = None,
+    ) -> str:
+        """Call GPT with JSON output mode. Retries up to 3 times with exponential backoff."""
+        if not self.client:
+            raise RuntimeError("OpenAI client not initialized — set OPENAI_API_KEY")
+        self._warn_token_budget(system_prompt, user_message, label)
+        max_tok = max_tokens_override or settings.openai_max_tokens
+        if max_tokens_override:
+            log.info(f"[{label}] using max_tokens_override={max_tokens_override}")
+        response = self.client.chat.completions.create(
+            model=settings.openai_model,
+            temperature=settings.openai_temperature,
+            max_tokens=max_tok,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            response_format={"type": "json_object"},
+        )
+        self._log_usage(response, label)
+        return response.choices[0].message.content
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True,
+    )
+    def complete_json_cached(
+        self,
+        system_prompt: str,
+        user_message: str,
+        label: str = "llm",
+        max_tokens_override: int | None = None,
+    ) -> str:
+        """Like complete_json but structured for OpenAI prefix caching.
+
+        Put static/large content in system_prompt, dynamic/tiny content in user_message.
+        OpenAI automatically caches prefixes > 1024 tokens; cached tokens cost 50% less.
+        Cache hit rate is visible in the logged 'cached' token count.
+        """
+        if not self.client:
+            raise RuntimeError("OpenAI client not initialized — set OPENAI_API_KEY")
+        self._warn_token_budget(system_prompt, user_message, label)
+        max_tok = max_tokens_override or settings.openai_max_tokens
+        if max_tokens_override:
+            log.info(f"[{label}] using max_tokens_override={max_tokens_override}")
+        response = self.client.chat.completions.create(
+            model=settings.openai_model,
+            temperature=settings.openai_temperature,
+            max_tokens=max_tok,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            response_format={"type": "json_object"},
+        )
+        self._log_usage(response, label)
+        return response.choices[0].message.content
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True,
+    )
+    def complete_json_with_messages(
+        self,
+        messages: list[dict],
+        label: str = "llm",
+        max_tokens_override: int | None = None,
+    ) -> str:
+        """Multi-turn call for cache-optimised sequences.
+
+        Caller controls the full messages array (system + any prior turns + user).
+        """
+        if not self.client:
+            raise RuntimeError("OpenAI client not initialized — set OPENAI_API_KEY")
+        system_text = next((m["content"] for m in messages if m["role"] == "system"), "")
+        user_text = next((m["content"] for m in messages if m["role"] == "user"), "")
+        self._warn_token_budget(system_text, user_text, label)
+        max_tok = max_tokens_override or settings.openai_max_tokens
+        response = self.client.chat.completions.create(
+            model=settings.openai_model,
+            temperature=settings.openai_temperature,
+            max_tokens=max_tok,
+            messages=messages,
+            response_format={"type": "json_object"},
+        )
+        self._log_usage(response, label)
+        return response.choices[0].message.content
+
+
+llm_client = LLMClient()

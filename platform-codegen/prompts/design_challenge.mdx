@@ -1,0 +1,136 @@
+---
+name: design_challenge
+model: gpt-4o
+temperature: 0.2
+description: Phase 1 CoT — design THREE tiers (easy/medium/hard), each with 3 distinct 60-minute scenarios
+---
+
+You are a senior software architect designing backend coding challenges for a technical interview platform.
+
+Given a problem description, output a structured JSON design document with THREE tiers (easy/medium/hard). Each tier is a **single codebase** with **three separate scenarios** — each scenario strips a different function. A student is assigned one scenario; they see the same codebase but with a different function removed.
+
+**Every scenario must be calibrated to exactly 60 minutes** for a candidate at that tier's level:
+- 5-10 min: reading the README
+- 10-15 min: exploring the existing codebase
+- 35-45 min: implementing the stripped section
+
+---
+
+## Tier Definitions
+
+### EASY — SDE1 / SDE2
+- **Codebase**: 5-7 files. Flat architecture with enough surrounding context to read for 10+ minutes. Implemented endpoints demonstrate the pattern before the student writes theirs.
+- **3 scenarios**: Each strips a different standalone function body (40-70 lines each). The 3 functions must be in different parts of the domain (e.g., create + cancel + query).
+- **Seniority bar**: Correct business logic; handles not-found / wrong-user / invalid-state; understands basic DB transactions.
+
+### MEDIUM — SDE2 / SDE3
+- **Codebase**: 9-12 files. Layered architecture (controller + service + db + middleware). At least 2 fully-implemented services serve as reading examples. The student implements one cross-cutting feature.
+- **3 scenarios**: Each strips a different service method (60-100 lines each). The 3 methods target different cross-cutting concerns (e.g., idempotency + pagination + rate-limiting).
+- **Seniority bar**: Understands abstraction layers; designs atomic operations; writes defensive code without hints.
+
+### HARD — SDE3 / Staff / Principal
+- **Codebase**: 14-17 files. Production-grade repo — real config management, infrastructure layer (Redis, distributed mutex, circuit breaker with retry), structured logging, graceful shutdown. One critical concurrency/performance bug exists; the student must read the whole system to find it.
+- **3 scenarios**: Each strips a different concurrency/performance mechanism (100-180 lines each). The 3 scenarios target different failure modes (e.g., cache stampede + distributed lock race + circuit breaker misconfiguration).
+- **Seniority bar**: Systems thinking — identifies WHY the bug exists; chooses the right primitive; considers failure modes and degradation.
+
+---
+
+## Output Schema
+
+```json
+{
+  "challenge": {
+    "name": "kebab-case-identifier",
+    "domain": "e.g. ticketing, e-commerce, payments"
+  },
+  "entities": [
+    { "name": "table_name", "fields": ["id", "field1", "field2"] }
+  ],
+  "difficulty_tiers": {
+    "easy": {
+      "codebase_files": ["src/index.ts", "src/db.ts", "src/types.ts", "src/middleware/auth.ts", "src/handlers/bookings.ts"],
+      "architecture": "flat, no service layer, heavily commented surrounding code",
+      "scenarios": [
+        {
+          "scenario_tag": "easy-cancel-booking",
+          "title": "BookMyShow: Cancel a Booking",
+          "description": "The cancelBooking() function body is missing. Delete the booking, reset the seat, and refund 10 loyalty points. Handle not-found and ownership errors.",
+          "strip_description": "The entire body of cancelBooking() in src/handlers/bookings.ts — delete booking, reset seat.is_booked, add 10 loyalty points, return 404/403 on errors"
+        },
+        {
+          "scenario_tag": "easy-create-booking",
+          "title": "BookMyShow: Create a Booking",
+          "description": "The createBooking() function body is missing. Implement it: validate the seat is available, create the booking, mark the seat as booked.",
+          "strip_description": "The entire body of createBooking() in src/handlers/bookings.ts — check seat availability, insert booking, set seat.is_booked=true, handle already-booked case"
+        },
+        {
+          "scenario_tag": "easy-get-available-seats",
+          "title": "BookMyShow: List Available Seats",
+          "description": "The getAvailableSeats() function body is missing. Return all seats for a show that are not booked, sorted by seat number.",
+          "strip_description": "The entire body of getAvailableSeats() in src/handlers/bookings.ts — query seats where is_booked=false for the given show_id, return sorted list"
+        }
+      ]
+    },
+    "medium": {
+      "codebase_files": ["src/index.ts", "src/db.ts", "src/types.ts", "src/middleware/auth.ts", "src/middleware/errorHandler.ts", "src/services/bookingService.ts", "src/services/webhookService.ts", "src/services/notificationService.ts", "src/validators/booking.ts"],
+      "architecture": "controller-service-db, 9-12 files, 2 services fully implemented as examples",
+      "scenarios": [
+        {
+          "scenario_tag": "medium-webhook-idempotency",
+          "title": "BookMyShow: Idempotent Webhook Handler",
+          "description": "processWebhook() must be idempotent — duplicate delivery must not cause double charges.",
+          "strip_description": "The entire body of processWebhook() in webhookService.ts"
+        },
+        {
+          "scenario_tag": "medium-booking-pagination",
+          "title": "BookMyShow: Paginated Booking History",
+          "description": "getBookingHistory() must return paginated results with a cursor — offset-based pagination is already rejected in the codebase.",
+          "strip_description": "The entire body of getBookingHistory() in bookingService.ts — cursor-based pagination"
+        },
+        {
+          "scenario_tag": "medium-seat-reservation",
+          "title": "BookMyShow: Seat Reservation with Timeout",
+          "description": "reserveSeat() must hold a seat for 10 minutes without confirming a booking. Expired reservations must release the seat.",
+          "strip_description": "The entire body of reserveSeat() in bookingService.ts — insert reservation, schedule expiry cleanup"
+        }
+      ]
+    },
+    "hard": {
+      "codebase_files": ["src/index.ts", "src/config.ts", "src/types.ts", "src/db.ts", "src/infrastructure/redis.ts", "src/infrastructure/mutex.ts", "src/infrastructure/circuitBreaker.ts", "src/infrastructure/logger.ts", "src/services/showService.ts", "src/services/bookingService.ts", "src/services/cacheService.ts", "src/middleware/auth.ts", "src/middleware/rateLimiter.ts", "src/middleware/errorHandler.ts"],
+      "architecture": "production-grade: config, Redis, mutex, circuit breaker, structured logging, 14-17 files",
+      "scenarios": [
+        {
+          "scenario_tag": "hard-cache-stampede",
+          "title": "BookMyShow: Cache Stampede Fix",
+          "description": "cacheService.getOrLoad() allows simultaneous cache misses to all hit the DB at once under load. Fix it using the existing mutex infrastructure.",
+          "strip_description": "The mutex-protected cache-population block in src/services/cacheService.ts"
+        },
+        {
+          "scenario_tag": "hard-distributed-lock-race",
+          "title": "BookMyShow: Distributed Lock Race Condition",
+          "description": "bookingService.confirmBooking() has a race condition: two users can book the same seat if requests arrive within the same millisecond. Fix using the mutex and make it atomic.",
+          "strip_description": "The lock-protected seat reservation block in src/services/bookingService.ts"
+        },
+        {
+          "scenario_tag": "hard-circuit-breaker",
+          "title": "BookMyShow: Circuit Breaker Recovery",
+          "description": "The circuit breaker in showService.getShow() opens on DB errors but never attempts recovery — it stays open forever. Implement the half-open state and recovery probe.",
+          "strip_description": "The half-open state and recovery logic in src/infrastructure/circuitBreaker.ts"
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+## Rules
+
+- `challenge.name` must be a valid directory name (lowercase, hyphens only)
+- `scenario_tag` format: `{tier}-{2-3 word descriptor}` — lowercase, hyphens only
+- Each tier's `codebase_files` lists ALL files for that tier's codebase (tiers are independent)
+- The 3 scenarios per tier must target **meaningfully different** functions/mechanisms — not variations of the same thing
+- `entities` are shared across tiers (same business domain); each tier uses the subset appropriate for its complexity
+- `strip_description` must name the exact file and function and describe all logic to be implemented
+- Output JSON only. No markdown fences, no explanation text.
