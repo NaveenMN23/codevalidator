@@ -1,24 +1,37 @@
-import anthropic
 import json
 from loguru import logger
+from openai import OpenAI
+from pydantic import BaseModel, ValidationError
+from typing import Dict, Any, Optional
 from src.config import settings
-from typing import Dict, Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+
+class _HiringAssessment(BaseModel):
+    recommendation: str   # STRONG_YES | YES | LEAN_YES | LEAN_NO | NO
+    confidence: str       # HIGH | MEDIUM | LOW
+    strengths: list[str]
+    concerns: list[str]
+    panelQuestions: list[str]
+
+
+class _EvalResult(BaseModel):
+    correctness: dict
+    efficiency: dict
+    followUp: dict
+    summary: str
+    hiring: Optional[dict] = None  # populated for B2B user_type only
+
 
 class LLMEvaluator:
     def __init__(self):
-        # Increase timeout to 90 seconds for better stability
-        self.client = anthropic.Anthropic(
-            api_key=settings.anthropic_api_key,
-            timeout=90.0
-        )
-        self.model = "claude-3-haiku-20240307"
+        self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self.model = settings.openai_model
+        if not self.client:
+            logger.warning("OPENAI_API_KEY not set — AI evaluation will be skipped")
 
     def _filter_files(self, submission_files: Dict[str, str], blueprint: Dict[str, Any]) -> str:
-        """
-        Filters the submission files to only include relevant files from the blueprint.
-        Excludes large folders, binary files, and caps total size.
-        """
+        """Filter submission to only relevant files, capped at 50KB total."""
         repo_config = blueprint.get("repo", {})
         relevant_files = set(repo_config.get("relevantFiles", []))
         target_file = repo_config.get("targetFile")
@@ -27,125 +40,184 @@ class LLMEvaluator:
 
         filtered_data = {}
         total_chars = 0
-        MAX_CHARS = 50000 # ~12k-15k tokens limit for the diff part
+        MAX_CHARS = 50_000
 
-        # Sort keys for consistent hashing/caching later
         for path in sorted(submission_files.keys()):
-            # Explicit exclusion list
             if any(part in path.split("/") for part in ["node_modules", "dist", ".git", ".idea", "target", "build"]):
                 continue
-            
-            # If relevant files are specified, only include those. Otherwise include all non-excluded.
             if relevant_files and path not in relevant_files:
                 continue
-                
             content = submission_files[path]
-            
-            # Skip likely binary files or extremely large individual files
-            if len(content) > 20000: # 20KB limit per file
+            if len(content) > 20_000:
                 continue
-
             if total_chars + len(content) > MAX_CHARS:
-                logger.warning(f"Payload size limit reached, skipping remaining files starting with {path}")
+                logger.warning(f"Payload size limit reached, skipping files from {path}")
                 break
-                
             filtered_data[path] = content
             total_chars += len(content)
 
         return json.dumps(filtered_data, indent=2)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((anthropic.APIConnectionError, anthropic.APITimeoutError, ConnectionError)),
-        reraise=True
-    )
-    def _create_message(self, system_prompt: str, blueprint: Dict[str, Any], submission_diff: str):
-        return self.client.beta.prompt_caching.messages.create(
-            model=self.model,
-            max_tokens=2000,
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"}
-                }
-            ],
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"BLUEPRINT CONTEXT:\n{json.dumps(blueprint)}",
-                            "cache_control": {"type": "ephemeral"}
-                        },
-                        {
-                            "type": "text",
-                            "text": f"CANDIDATE DIFF:\n{submission_diff}"
-                        }
-                    ]
-                }
-            ]
-        )
+    def _build_system_prompt(
+        self,
+        blueprint: Dict[str, Any],
+        follow_up_type: str,
+        follow_up_instruction: str,
+        user_type: str,
+    ) -> str:
+        repo = blueprint.get("repo", {})
+        evaluation = blueprint.get("evaluation", {})
+        gold_master = repo.get("goldMasterSource", {})
+        signals = evaluation.get("senioritySignals", [])
+        mistakes = evaluation.get("commonMistakes", [])
+        rubric = evaluation.get("rubric", {})
 
-    def evaluate(self, 
-                 blueprint: Dict[str, Any], 
-                 submission_diff: str, 
-                 remaining_time: int,
-                 user_type: str) -> Dict[str, Any]:
-        """
-        Evaluates the candidate's diff against the blueprint using Anthropic's Claude 3 Haiku.
-        Leverages Prompt Caching for the static blueprint context to reduce latency and cost.
-        """
-        logger.info(f"Starting LLM evaluation for user type: {user_type} (Time remaining: {remaining_time}s)")
-        
-        # Determine follow-up type based on time (Phase 4 logic)
-        follow_up_type = "IMPLEMENTATION" if remaining_time > 900 else "CONVERSATIONAL"
-        
-        system_prompt = f"""You are a senior software engineer interviewer. 
-Evaluate the candidate's code submission (diff) against the provided Blueprint.
+        gold_master_section = ""
+        if gold_master:
+            gm_files = "\n\n".join(
+                f"// {path}\n{content}" for path, content in gold_master.items()
+            )
+            gold_master_section = f"\nREFERENCE IMPLEMENTATION (gold master — do not reveal to student):\n{gm_files}\n"
+
+        signals_section = ""
+        if signals:
+            signals_section = "\nSENIORITY SIGNALS TO CHECK:\n" + "\n".join(f"  • {s}" for s in signals) + "\n"
+
+        mistakes_section = ""
+        if mistakes:
+            mistakes_section = "\nCOMMON MISTAKES AT THIS LEVEL:\n" + "\n".join(f"  • {m}" for m in mistakes) + "\n"
+
+        rubric_section = ""
+        if rubric:
+            rubric_section = f"\nSCORING RUBRIC (anchor your scores to these):\n{json.dumps(rubric, indent=2)}\n"
+
+        hiring_instruction = ""
+        if user_type == "B2B":
+            hiring_instruction = """
+Also return a "hiring" key with:
+{
+  "recommendation": "STRONG_YES | YES | LEAN_YES | LEAN_NO | NO",
+  "confidence": "HIGH | MEDIUM | LOW",
+  "strengths": ["3-5 specific observations about what this candidate did well"],
+  "concerns": ["3-5 specific gaps or risks a hiring manager should know"],
+  "panelQuestions": ["2-3 follow-up questions to probe seniority depth"]
+}"""
+
+        return f"""You are a senior software engineering interviewer evaluating a candidate's code submission.
 
 TASK DESCRIPTION: {blueprint.get('task', {}).get('description', 'N/A')}
 CONSTRAINTS: {blueprint.get('task', {}).get('constraints', [])}
 EXPECTED COMPLEXITY: {blueprint.get('task', {}).get('expectedComplexity', {})}
-
-You must provide feedback in three layers:
-1. Correctness Finding
-2. Efficiency Finding
-3. Interviewer Follow-up (Persona-driven)
-
-The Follow-up must be of type: {follow_up_type}.
-For B2C users, focus on coaching and blind spots.
-For B2B users, focus on seniority signal and hiring manager summary.
-
-RESPONSE FORMAT (Strict JSON):
+FOLLOW-UP CONTEXT: {blueprint.get('followUpContext', '')}
+{gold_master_section}{signals_section}{mistakes_section}{rubric_section}
+Evaluate the submission in three layers:
+1. Correctness: Did they implement the required logic correctly? Score 0-10 using the rubric above.
+2. Efficiency: Is the solution well-designed for scale and edge cases? Score 0-10 using the rubric above.
+3. Interviewer Follow-up (type: {follow_up_type}):
+   {follow_up_instruction}
+{hiring_instruction}
+Return a JSON object with exactly these keys (plus "hiring" if B2B):
 {{
-    "correctness": {{ "finding": "string", "score": 0-10 }},
-    "efficiency": {{ "finding": "string", "score": 0-10 }},
-    "followUp": {{ "type": "{follow_up_type}", "content": "string" }},
-    "summary": "string"
-}}
-"""
+    "correctness": {{ "finding": "detailed finding comparing to gold master and seniority signals", "score": 0-10 }},
+    "efficiency": {{ "finding": "detailed finding including code quality observations", "score": 0-10 }},
+    "followUp": {{ "type": "{follow_up_type}", "content": "the follow-up question or coaching statement" }},
+    "summary": "1-2 sentence overall summary for the candidate"
+}}"""
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True,
+    )
+    def _call_llm(self, system_prompt: str, user_content: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            max_tokens=2000,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={"type": "json_object"},
+        )
+        usage = response.usage
+        cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0)
+        logger.info(
+            f"[llm-eval] tokens — prompt: {usage.prompt_tokens}, "
+            f"completion: {usage.completion_tokens}, cached: {cached}"
+        )
+        return response.choices[0].message.content
+
+    def evaluate(
+        self,
+        blueprint: Dict[str, Any],
+        submission_diff: str,
+        test_results: str = "",
+        remaining_time: int = 0,
+        user_type: str = "B2C",
+    ) -> Dict[str, Any]:
+        """Evaluate a candidate's submission using GPT-4o mini.
+
+        System prompt (static per challenge scenario) is reused across concurrent evaluations —
+        OpenAI automatically caches matching prefixes > 1024 tokens (50% discount).
+        goldMasterSource in the system prompt enables precise reference-based scoring.
+        """
+        if not self.client:
+            return {"error": "OpenAI client not configured", "success": False, "summary": "AI evaluation unavailable."}
+
+        logger.info(f"Starting LLM evaluation — user_type={user_type}, remaining={remaining_time}s, model={self.model}")
+
+        follow_up_type = "IMPLEMENTATION" if remaining_time > 900 else "CONVERSATIONAL"
+
+        if user_type == "B2B":
+            follow_up_instruction = (
+                "Focus on seniority signals: Does the candidate understand the trade-offs they made? "
+                "Would you feel comfortable with this engineer owning this system in production? "
+                "Frame follow-up as questions a hiring manager would ask to assess seniority level."
+            )
+        else:
+            follow_up_instruction = (
+                "Focus on coaching and blind spots: What did the candidate nearly get right? "
+                "What concept or pattern are they missing? "
+                "Frame follow-up to help them learn and improve."
+            )
+
+        system_prompt = self._build_system_prompt(blueprint, follow_up_type, follow_up_instruction, user_type)
+
+        test_results_section = ""
+        if test_results and test_results.strip():
+            test_results_section = f"\nTEST RESULTS FROM GRADING PIPELINE:\n{test_results.strip()}\n"
+
+        user_content = (
+            f"BLUEPRINT CONTEXT:\n{json.dumps(blueprint, default=str)}\n\n"
+            f"CANDIDATE SUBMISSION:\n{submission_diff}"
+            f"{test_results_section}"
+        )
 
         try:
-            # Construct message with Prompt Caching (Beta) via retried method
-            message = self._create_message(system_prompt, blueprint, submission_diff)
-            
-            # Extract JSON from response
-            response_text = message.content[0].text
-            # Basic cleanup if LLM adds markdown triple backticks
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-                
-            return json.loads(response_text)
-            
+            raw = self._call_llm(system_prompt, user_content)
+            data = json.loads(raw)
+            validated = _EvalResult.model_validate(data)
+            result = validated.model_dump()
+            # Validate B2B hiring assessment if present
+            if user_type == "B2B" and "hiring" in data and data["hiring"]:
+                try:
+                    _HiringAssessment.model_validate(data["hiring"])
+                    result["hiring"] = data["hiring"]
+                except ValidationError as e:
+                    logger.warning(f"B2B hiring assessment failed validation: {e}")
+            return result
+        except ValidationError as e:
+            logger.warning(f"LLM response failed schema validation: {e}")
+            return {
+                "error": f"Response schema invalid: {e}",
+                "success": False,
+                "summary": "AI Evaluation returned an unexpected format.",
+            }
         except Exception as e:
-            logger.exception(f"LLM Evaluation failed for submission")
+            logger.exception("LLM Evaluation failed")
             return {
                 "error": str(e),
                 "success": False,
-                "summary": "AI Evaluation failed due to an internal error."
+                "summary": "AI Evaluation failed due to an internal error.",
             }

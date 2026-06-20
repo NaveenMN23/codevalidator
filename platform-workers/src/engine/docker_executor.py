@@ -103,6 +103,8 @@ class DockerExecutor:
 
             # esbuild (used by tsx) spawns OS threads for GC goroutines; 50 is too low
             effective_pids = 200 if language in ["node", "javascript", "typescript"] else self.pids_limit
+            # JVM startup + compilation needs more time than interpreted languages
+            effective_timeout = 45 if language == "java" else self.timeout
 
             container = self.client.containers.run(
                 image,
@@ -129,7 +131,7 @@ class DockerExecutor:
                 if container.status not in ["created", "running"]:
                     break
 
-                if time.time() - start_time > self.timeout:
+                if time.time() - start_time > effective_timeout:
                     container.stop(timeout=1)
                     return {
                         "success": False,
