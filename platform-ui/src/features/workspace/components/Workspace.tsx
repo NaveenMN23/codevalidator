@@ -6,23 +6,25 @@ import Split from 'react-split';
 import ReactMarkdown from 'react-markdown';
 import { TerminalComponent } from './Terminal';
 import { FileExplorer } from './FileExplorer';
+import { FeedbackDisplay } from './FeedbackDisplay';
 import { getWebContainer, runCommand } from '../../../lib/webcontainer';
 import { 
   Play, Send, RefreshCcw, LayoutGrid, BookOpen, 
   ArrowLeft, ChevronUp, ChevronDown, CircleDot, Terminal as TerminalIcon,
-  RotateCcw
+  RotateCcw, Sparkles
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
 import type { FileSystemTree } from '@webcontainer/api';
-import { fetchChallenge, fetchDraft, saveDraft, submitChallenge, deleteDraft } from '../api';
+import { fetchChallenge, fetchDraft, saveDraft, submitChallenge, deleteDraft, fetchSubmission } from '../api';
+import type { GradingResult } from '../workspace.types';
 import './Workspace.css';
 
-const MINIO_BASE = 'http://localhost:9000';
+const MINIO_BASE = ''; // Proxied through Nginx /challenges/ → MinIO (avoids COEP cross-origin block)
 
 export function Workspace() {
   const { challengeId } = useParams<{ challengeId: string }>();
   const navigate = useNavigate();
-  const user = useAppStore(state => state.user);
+  const { user, theme } = useAppStore();
   
   const [files, setFiles] = useState<FileSystemTree | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -32,15 +34,31 @@ export function Workspace() {
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
+  const [gradingResult, setGradingResult] = useState<GradingResult | null>(null);
   const [challengeMeta, setChallengeMeta] = useState<any>(null);
   const [showExplorer, setShowExplorer] = useState(true);
   const [showTerminal, setShowTerminal] = useState(true);
-  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'explorer'>('problem');
+  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'explorer' | 'feedback'>('problem');
   const [isInstalling, setIsInstalling] = useState(false);
   const [installComplete, setInstallComplete] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(3600); // 60 minutes default
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const terminalInstanceRef = useRef<any>(null);
+
+  // Timer logic
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
 
   const unflattenFiles = (flatFiles: Record<string, string>): FileSystemTree => {
     const tree: FileSystemTree = {};
@@ -306,16 +324,42 @@ export function Workspace() {
     setIsSubmitting(true);
     setSubmitStatus('Submitting...');
     try {
-      const result = await submitChallenge({
+      const initialSubmission = await submitChallenge({
         userId: user.id,
         challengeId,
-        files: flattenFiles(files)
+        files: flattenFiles(files),
+        isPremium: (user as any).isPremium || true, // Default to true for testing
+        remainingTimeSeconds: timeLeft,
+        userType: 'B2C'
       });
-      setSubmitStatus(`Submitted! ID: ${result.id}`);
+      
+      setGradingResult(initialSubmission);
+      setSubmitStatus('Grading in progress...');
+
+      // Polling for completion
+      const pollInterval = setInterval(async () => {
+        try {
+          const updatedSubmission = await fetchSubmission(initialSubmission.id);
+          setGradingResult(updatedSubmission);
+          
+          if (updatedSubmission.status !== 'PENDING') {
+            clearInterval(pollInterval);
+            setIsSubmitting(false);
+            setSubmitStatus(updatedSubmission.status === 'COMPLETED' 
+              ? `Grading complete! Score: ${updatedSubmission.score}` 
+              : `Grading failed: ${updatedSubmission.status}`);
+          }
+        } catch (err) {
+          console.error("Polling failed", err);
+          clearInterval(pollInterval);
+          setIsSubmitting(false);
+          setSubmitStatus('Error checking grading status');
+        }
+      }, 2000);
+
     } catch (err) {
       console.error("Submission failed", err);
       setSubmitStatus('Submission failed');
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -369,6 +413,12 @@ export function Workspace() {
     }
   }, [selectedFile, webcontainer]);
 
+  useEffect(() => {
+    if (gradingResult) {
+      setActiveLeftTab('feedback');
+    }
+  }, [gradingResult]);
+
   if (isBooting) {
     return (
       <div className="flex h-full items-center justify-center bg-background text-slate-400">
@@ -383,36 +433,42 @@ export function Workspace() {
   const readmeContent = getFileContent('README.md', files);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-[#09090b] text-[#e4e4e7]">
+    <div className="flex flex-col h-full overflow-hidden bg-background text-text-main">
       {/* Workspace Header - More compact */}
-      <div className="h-11 border-b border-white/[0.06] bg-[#09090b] flex items-center justify-between px-3 shrink-0">
+      <div className="h-11 border-b border-border-main bg-background flex items-center justify-between px-3 shrink-0">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <button 
               onClick={handleBack}
-              className="p-1.5 rounded hover:bg-white/5 text-slate-500 transition-all mr-1"
+              className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all mr-1"
               title="Back to Dashboard"
             >
               <ArrowLeft size={16} />
             </button>
+            <div className="flex flex-col items-center px-3 py-1 bg-black/5 dark:bg-white/5 rounded border border-border-main mr-2">
+              <span className="text-[9px] text-text-muted font-bold uppercase leading-none mb-0.5">Time Remaining</span>
+              <span className={`text-xs font-mono font-bold leading-none ${timeLeft < 300 ? 'text-red-500 animate-pulse' : 'text-primary'}`}>
+                {formatTime(timeLeft)}
+              </span>
+            </div>
             <button 
               onClick={() => setShowExplorer(!showExplorer)}
-              className={`p-1.5 rounded transition-all ${showExplorer ? 'bg-primary/15 text-primary' : 'hover:bg-white/5 text-slate-500'}`}
+              className={`p-1.5 rounded transition-all ${showExplorer ? 'bg-background border border-border-main text-primary shadow-sm shadow-primary/5' : 'hover:bg-black/5 dark:hover:bg-white/5 text-text-muted border border-transparent'}`}
               title={showExplorer ? "Hide Sidebar" : "Show Sidebar"}
             >
               <LayoutGrid size={16} />
             </button>
-            <div className="w-px h-4 bg-white/10" />
+            <div className="w-px h-4 bg-border-main ml-1" />
             <div className="flex items-center gap-2 ml-1">
-              <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center text-primary text-xs font-bold">
+              <div className="w-6 h-6 rounded border border-border-main flex items-center justify-center text-primary text-xs font-bold bg-background">
                 {challengeMeta?.difficulty?.[0]}
               </div>
               <div className="flex flex-col">
-                <h2 className="text-[11px] font-semibold text-slate-200 leading-tight">{challengeMeta?.title}</h2>
+                <h2 className="text-[11px] font-semibold text-text-main leading-tight">{challengeMeta?.title}</h2>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">{challengeMeta?.language}</span>
-                  <div className="w-1 h-1 rounded-full bg-slate-700" />
-                  <span className="text-[9px] text-slate-600 font-medium">Node.js Framework</span>
+                  <span className="text-[9px] text-text-muted font-bold uppercase tracking-wider">{challengeMeta?.language}</span>
+                  <div className="w-1 h-1 rounded-full bg-border-main" />
+                  <span className="text-[9px] text-text-muted font-medium uppercase">Node.js Framework</span>
                 </div>
               </div>
             </div>
@@ -423,7 +479,7 @@ export function Workspace() {
           <button 
             onClick={handleReset}
             disabled={isBooting}
-            className="p-1.5 rounded hover:bg-white/5 text-slate-500 transition-all mr-1"
+            className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all mr-1"
             title="Reset to Boilerplate"
           >
             <RotateCcw size={14} />
@@ -431,15 +487,15 @@ export function Workspace() {
           <button 
             onClick={handleRun}
             disabled={isRunning}
-            className="flex items-center gap-1.5 bg-[#18181b] hover:bg-[#27272a] text-slate-200 text-[11px] font-medium px-3 py-1.5 rounded border border-white/[0.06] transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-text-main text-[11px] font-bold px-3 py-1.5 rounded border border-border-main transition-all disabled:opacity-50"
           >
-            <Play size={12} className={isRunning ? 'animate-pulse text-primary' : 'text-primary'} />
+            <Play size={12} className={isRunning ? 'animate-pulse text-primary fill-primary' : 'text-primary fill-primary'} />
             {isRunning ? 'Running...' : 'Run Tests'}
           </button>
           <button 
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white text-[11px] font-medium px-3 py-1.5 rounded transition-all disabled:opacity-50 shadow-lg shadow-primary/10"
+            className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white text-[11px] font-bold px-3 py-1.5 rounded transition-all disabled:opacity-50 shadow-lg shadow-primary/20"
           >
             <Send size={12} />
             {isSubmitting ? 'Submitting...' : 'Submit'}
@@ -455,42 +511,55 @@ export function Workspace() {
           gutterSize={showExplorer ? 2 : 0}
         >
           {/* Sidebar Area */}
-          <div className={`flex flex-col bg-[#09090b] border-r border-white/[0.06] overflow-hidden transition-all min-h-0 ${!showExplorer ? 'hidden' : ''}`}>
+          <div className={`flex flex-col bg-panel border-r border-border-main overflow-hidden transition-all min-h-0 ${!showExplorer ? 'hidden' : ''}`}>
             {/* Tabs - Smaller */}
-            <div className="flex bg-[#09090b] shrink-0 border-b border-white/[0.06]">
+            <div className="flex bg-background shrink-0 border-b border-border-main">
               <button 
                 onClick={() => setActiveLeftTab('problem')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'problem' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'problem' ? 'border-primary text-primary bg-background' : 'border-transparent text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'}`}
               >
                 <BookOpen size={12} />
                 Problem
               </button>
               <button 
                 onClick={() => setActiveLeftTab('explorer')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'explorer' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'explorer' ? 'border-primary text-primary bg-background' : 'border-transparent text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'}`}
               >
                 <LayoutGrid size={12} />
                 Files
               </button>
+              {gradingResult && (
+                <button 
+                  onClick={() => setActiveLeftTab('feedback')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'feedback' ? 'border-primary text-primary bg-background' : 'border-transparent text-primary hover:bg-primary/5 animate-pulse'}`}
+                >
+                  <Sparkles size={12} />
+                  Feedback
+                </button>
+              )}
             </div>
 
-            <div className="flex-grow overflow-hidden bg-[#09090b] min-h-0">
+            <div className="flex-grow overflow-hidden bg-background min-h-0">
               {activeLeftTab === 'problem' ? (
-                <div className="h-full overflow-y-auto p-4 prose prose-invert prose-xs max-w-none scrollbar-thin scrollbar-thumb-white/10 selection:bg-primary/30">
+                <div className="h-full overflow-y-auto p-4 prose dark:prose-invert prose-xs max-w-none scrollbar-thin selection:bg-primary/30">
                   <ReactMarkdown>{readmeContent || challengeMeta?.description || 'No description provided.'}</ReactMarkdown>
                 </div>
-              ) : (
+              ) : activeLeftTab === 'explorer' ? (
                 <FileExplorer 
                   files={files || {}} 
                   selectedFile={selectedFile} 
                   onSelect={setSelectedFile} 
                 />
+              ) : (
+                <div className="h-full overflow-y-auto p-4 scrollbar-thin">
+                  <FeedbackDisplay result={gradingResult!} />
+                </div>
               )}
             </div>
           </div>
 
           {/* Editor & Terminal Area */}
-          <div className="flex flex-col min-w-0 bg-[#09090b] min-h-0 relative overflow-hidden">
+          <div className="flex flex-col min-w-0 bg-background min-h-0 relative overflow-hidden">
             <div className="flex-grow flex flex-col min-h-0 overflow-hidden">
               <Split 
                 direction="vertical"
@@ -500,16 +569,16 @@ export function Workspace() {
                 className="flex flex-col h-full min-h-0 split-vertical"
               >
                 {/* Editor Section */}
-                <div className="relative flex flex-col min-h-0 bg-[#09090b] overflow-hidden">
-                  <div className="h-8 bg-[#09090b] border-b border-white/[0.06] flex items-center px-4 shrink-0 justify-between">
-                    <span className="text-[10px] text-slate-500 font-mono flex items-center gap-2">
+                <div className="relative flex flex-col min-h-0 bg-background overflow-hidden border-b border-border-main">
+                  <div className="h-8 bg-panel border-b border-border-main flex items-center px-4 shrink-0 justify-between">
+                    <span className="text-[10px] text-text-muted font-mono flex items-center gap-2">
                       {selectedFile || 'Select a file'}
                     </span>
                   </div>
                   <div className="flex-grow overflow-hidden relative">
                     <Editor
                       height="100%"
-                      theme="vs-dark"
+                      theme={theme === 'light' ? 'vs' : 'vs-dark'}
                       path={selectedFile || ''}
                       value={selectedFile ? getFileContent(selectedFile, files) : ''}
                       onChange={handleEditorChange}
@@ -540,20 +609,20 @@ export function Workspace() {
                 </div>
                 
                 {/* Terminal Section */}
-                <div className={`terminal-container bg-[#09090b] border-t border-white/[0.06] z-20 ${!showTerminal ? 'hidden' : ''}`}>
-                  <div className="h-7 border-b border-white/[0.06] bg-[#09090b] flex items-center px-3 shrink-0 justify-between">
+                <div className={`terminal-container bg-background border-t border-border-main z-20 ${!showTerminal ? 'hidden' : ''}`}>
+                  <div className="h-7 border-b border-border-main bg-panel flex items-center px-3 shrink-0 justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Terminal</span>
+                      <span className="text-[9px] text-text-muted font-black uppercase tracking-widest">Terminal</span>
                       {isInstalling && (
                         <div className="flex items-center gap-1.5 animate-pulse">
-                          <CircleDot size={8} className="text-yellow-500" />
-                          <span className="text-[8px] text-slate-600 font-bold uppercase">Background Install...</span>
+                          <CircleDot size={8} className="text-primary" />
+                          <span className="text-[8px] text-text-muted font-bold uppercase">Background Install...</span>
                         </div>
                       )}
                     </div>
                     <button 
                       onClick={() => setShowTerminal(false)}
-                      className="p-1 rounded hover:bg-white/5 text-slate-500 transition-all"
+                      className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all"
                       title="Hide Terminal"
                     >
                       <ChevronDown size={14} />
@@ -568,13 +637,13 @@ export function Workspace() {
 
             {/* Floating Terminal Bar (only when hidden) */}
             {!showTerminal && (
-              <div className="h-8 border-t border-white/[0.06] bg-[#09090b] flex items-center px-3 shrink-0 justify-between absolute bottom-0 left-0 right-0 z-20">
+              <div className="h-8 border-t border-border-main bg-panel flex items-center px-3 shrink-0 justify-between absolute bottom-0 left-0 right-0 z-20">
                 <div className="flex items-center gap-2">
-                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Terminal</span>
+                  <span className="text-[9px] text-text-muted font-black uppercase tracking-widest">Terminal</span>
                 </div>
                 <button 
                   onClick={() => setShowTerminal(true)}
-                  className="p-1 rounded hover:bg-white/5 text-slate-500 transition-all flex items-center gap-1"
+                  className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all flex items-center gap-1"
                   title="Show Terminal"
                 >
                   <TerminalIcon size={12} />
@@ -587,19 +656,19 @@ export function Workspace() {
       </div>
 
       {/* Footer - More compact */}
-      <div className="h-6 border-t border-white/[0.06] bg-[#09090b] flex items-center px-3 justify-between shrink-0">
+      <div className="h-6 border-t border-border-main bg-background flex items-center px-3 justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-[9px] font-medium text-slate-500">
+          <div className="flex items-center gap-1.5 text-[9px] font-bold text-text-muted">
             <div className={`w-1.5 h-1.5 rounded-full ${webcontainer ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.3)]' : 'bg-red-500'}`} />
-            {webcontainer ? 'READY' : 'CONNECTING...'}
+            {webcontainer ? 'ENVIRONMENT READY' : 'CONNECTING...'}
           </div>
-          <div className="w-px h-2.5 bg-white/10" />
-          <div className="text-[9px] text-slate-600 font-mono tracking-tighter">
+          <div className="w-px h-2.5 bg-border-main" />
+          <div className="text-[9px] text-text-muted font-mono tracking-tighter uppercase">
             {isRunning ? 'EXECUTING...' : isInstalling ? 'INSTALLING...' : 'IDLE'}
           </div>
         </div>
         {submitStatus && (
-          <div className="text-[9px] text-primary font-bold uppercase tracking-wider flex items-center gap-1">
+          <div className="text-[9px] text-primary font-black uppercase tracking-wider flex items-center gap-1">
             {submitStatus}
           </div>
         )}

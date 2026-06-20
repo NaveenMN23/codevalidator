@@ -35,20 +35,20 @@ function TreeItem({ name, node, path, onSelect, selectedFile, depth }: TreeItemP
       <div
         onClick={handleClick}
         className={`flex items-center py-1 px-2 cursor-pointer transition-all duration-150 group ${
-          isSelected ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'hover:bg-white/[0.03] text-slate-400 hover:text-slate-200'
+          isSelected ? 'text-primary border-r-2 border-primary font-bold' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.03] text-text-muted hover:text-text-main'
         }`}
         style={{ paddingLeft: `${depth * 10 + 6}px` }}
       >
         <div className="w-3.5 h-3.5 flex items-center justify-center mr-1 shrink-0">
           {isFolder ? (
-            isOpen ? <ChevronDown size={12} className="text-slate-500" /> : <ChevronRight size={12} className="text-slate-500" />
+            isOpen ? <ChevronDown size={12} className="text-text-muted" /> : <ChevronRight size={12} className="text-text-muted" />
           ) : null}
         </div>
         <div className="mr-1.5 shrink-0">
           {isFolder ? (
-            <Folder size={14} className={isOpen ? 'text-primary/60' : 'text-slate-600'} />
+            <Folder size={14} className={isOpen ? 'text-primary/60' : 'text-text-muted/60'} />
           ) : (
-            <File size={14} className={isSelected ? 'text-primary' : 'text-slate-600 group-hover:text-slate-500'} />
+            <File size={14} className={isSelected ? 'text-primary' : 'text-text-muted/60 group-hover:text-text-muted'} />
           )}
         </div>
         <span className="text-[12px] truncate font-medium tracking-tight">{name}</span>
@@ -70,9 +70,9 @@ function TreeItem({ name, node, path, onSelect, selectedFile, depth }: TreeItemP
 
 export function FileExplorer({ files, onSelect, selectedFile }: FileExplorerProps) {
   return (
-    <div className="h-full flex flex-col bg-[#09090b]">
-      <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
-        <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">Explorer</span>
+    <div className="h-full flex flex-col bg-background">
+      <div className="px-3 py-2 border-b border-border-main flex items-center justify-between">
+        <span className="text-[9px] font-black uppercase tracking-[0.15em] text-text-muted">Explorer</span>
       </div>
       <div className="flex-grow overflow-y-auto py-1 scrollbar-thin">
         {Object.entries(files || {}).length > 0 ? (
@@ -89,7 +89,7 @@ export function FileExplorer({ files, onSelect, selectedFile }: FileExplorerProp
           ))
         ) : (
           <div className="px-4 py-8 text-center">
-            <p className="text-[10px] text-slate-700 font-medium">No files loaded</p>
+            <p className="text-[10px] text-text-muted font-bold uppercase tracking-wider">No files loaded</p>
           </div>
         )}
       </div>

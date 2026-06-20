@@ -18,6 +18,7 @@ export async function bookSeat(showId: string, seatNumber: string) {
     if (seat.is_booked === 1) {
       throw new Error('Seat already booked');
     }
+    // @strip-end
 
     // Atomic update: only set is_booked to 1 if it is currently 0
     const result = await trx
