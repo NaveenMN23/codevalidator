@@ -1,8 +1,10 @@
 from pathlib import Path
-from openai import OpenAI
+from openai import OpenAI, APIConnectionError, APITimeoutError, RateLimitError, InternalServerError
 from config.settings import settings
 from infrastructure.logger import log
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+_TRANSIENT_ERRORS = (APIConnectionError, APITimeoutError, RateLimitError, InternalServerError)
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 _MAX_INPUT_TOKENS = 100_000  # warn at 80% of GPT-4o 128K input window
@@ -80,8 +82,8 @@ class LLMClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception),
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        retry=retry_if_exception_type(_TRANSIENT_ERRORS),
         reraise=True,
     )
     def complete_json(
@@ -113,8 +115,8 @@ class LLMClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception),
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        retry=retry_if_exception_type(_TRANSIENT_ERRORS),
         reraise=True,
     )
     def complete_json_cached(
@@ -151,8 +153,8 @@ class LLMClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception),
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        retry=retry_if_exception_type(_TRANSIENT_ERRORS),
         reraise=True,
     )
     def complete_json_with_messages(

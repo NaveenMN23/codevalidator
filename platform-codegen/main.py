@@ -12,6 +12,8 @@ async def lifespan(app: FastAPI):
         log.warning("OPENAI_API_KEY is not set — LLM calls will fail at runtime")
     else:
         log.info("OpenAI API key configured")
+    from infrastructure.consumer import start_in_background
+    start_in_background()
     yield
 
 

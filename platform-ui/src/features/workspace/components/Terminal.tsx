@@ -8,6 +8,16 @@ interface TerminalComponentProps {
   onTerminalReady: (terminal: Terminal) => void;
 }
 
+function getTerminalTheme() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    background: s.getPropertyValue('--bg-elevated').trim(),
+    foreground: s.getPropertyValue('--text-main').trim(),
+    cursor: s.getPropertyValue('--accent-color').trim(),
+    selectionBackground: s.getPropertyValue('--terminal-selection-bg').trim(),
+  };
+}
+
 export function TerminalComponent({ onTerminalReady }: TerminalComponentProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -18,25 +28,15 @@ export function TerminalComponent({ onTerminalReady }: TerminalComponentProps) {
 
     const terminal = new Terminal({
       cursorBlink: true,
-      theme: theme === 'light' ? {
-        background: '#ffffff',
-        foreground: '#0f172a',
-        cursor: '#3b82f6',
-        selectionBackground: 'rgba(59, 130, 246, 0.2)',
-      } : {
-        background: '#09090b',
-        foreground: '#e4e4e7',
-        cursor: '#3b82f6',
-        selectionBackground: 'rgba(255, 255, 255, 0.1)',
-      },
+      theme: getTerminalTheme(),
       fontSize: 13,
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
       allowTransparency: true,
     });
-    
+
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    
+
     terminal.open(terminalRef.current);
     fitAddon.fit();
 
@@ -54,20 +54,9 @@ export function TerminalComponent({ onTerminalReady }: TerminalComponentProps) {
     };
   }, []);
 
-  // Sync theme changes
   useEffect(() => {
     if (xtermRef.current) {
-      xtermRef.current.options.theme = theme === 'light' ? {
-        background: '#ffffff',
-        foreground: '#0f172a',
-        cursor: '#3b82f6',
-        selectionBackground: 'rgba(59, 130, 246, 0.2)',
-      } : {
-        background: '#09090b',
-        foreground: '#e4e4e7',
-        cursor: '#3b82f6',
-        selectionBackground: 'rgba(255, 255, 255, 0.1)',
-      };
+      xtermRef.current.options.theme = getTerminalTheme();
     }
   }, [theme]);
 

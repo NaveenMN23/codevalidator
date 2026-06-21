@@ -97,17 +97,18 @@ class StorageClient:
         challenge_name: str,
         tier: str,
         language: str,
-    ) -> bool:
+    ) -> None:
         """Create gold master ZIP from in-memory dicts and upload to gold-masters bucket.
 
         ZIP structure:
           manifest.json        — challenge metadata and scenario info
           src/{rel_path}       — complete gold master source files
           test-hidden/{name}   — hidden test files, one per scenario
+
+        Raises on any failure so the caller can skip dependent scaffold and blueprint steps.
         """
         if not self.s3_client:
-            log.warning("S3 client not initialized. Skipping gold master upload.")
-            return False
+            raise RuntimeError("S3 client not initialized — cannot upload gold master")
 
         import json as _json
         ext_map = {"java": "java", "python": "py"}
@@ -115,24 +116,19 @@ class StorageClient:
 
         zip_buffer = io.BytesIO()
         files_added = 0
-        try:
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr("manifest.json", _json.dumps(manifest, indent=2))
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("manifest.json", _json.dumps(manifest, indent=2))
+            files_added += 1
+            for rel_path, content in files.items():
+                zf.writestr(f"src/{rel_path}", content)
                 files_added += 1
-                for rel_path, content in files.items():
-                    zf.writestr(f"src/{rel_path}", content)
-                    files_added += 1
-                for scenario_tag, test_content in test_hidden.items():
-                    filename = f"hidden-{scenario_tag}.{test_ext}"
-                    zf.writestr(f"test-hidden/{filename}", test_content)
-                    files_added += 1
-        except Exception as e:
-            log.error(f"Failed to create gold master ZIP for {challenge_name}-{tier}: {e}")
-            return False
+            for scenario_tag, test_content in test_hidden.items():
+                filename = f"hidden-{scenario_tag}.{test_ext}"
+                zf.writestr(f"test-hidden/{filename}", test_content)
+                files_added += 1
 
         if files_added == 0:
-            log.warning(f"Gold master ZIP for {challenge_name}-{tier} is empty — skipping upload")
-            return False
+            raise ValueError(f"Gold master ZIP for {challenge_name}-{tier} is empty — nothing to upload")
 
         zip_buffer.seek(0)
         zip_bytes = zip_buffer.getvalue()
@@ -141,21 +137,16 @@ class StorageClient:
         if settings.local_export_path:
             self._export_gold_master_locally(zip_bytes, files, manifest, challenge_name, tier, language)
 
-        try:
-            self.s3_client.put_object(
-                Bucket=_GOLD_MASTERS_BUCKET,
-                Key=s3_key,
-                Body=zip_bytes,
-                ContentType="application/zip",
-            )
-            log.info(
-                f"Uploaded gold master → {_GOLD_MASTERS_BUCKET}/{s3_key} "
-                f"({files_added} entries)"
-            )
-            return True
-        except Exception as e:
-            log.error(f"Failed to upload gold master {s3_key}: {e}")
-            return False
+        self.s3_client.put_object(
+            Bucket=_GOLD_MASTERS_BUCKET,
+            Key=s3_key,
+            Body=zip_bytes,
+            ContentType="application/zip",
+        )
+        log.info(
+            f"Uploaded gold master → {_GOLD_MASTERS_BUCKET}/{s3_key} "
+            f"({files_added} entries)"
+        )
 
     # ── Local export helpers (dev-only, non-blocking) ─────────────────────────
 
@@ -216,23 +207,17 @@ class StorageClient:
         except Exception as e:
             log.warning(f"Local gold master export failed (non-blocking): {e}")
 
-    def upload_bytes(self, data: bytes, bucket: str, s3_key: str) -> bool:
-        """Upload raw bytes to a MinIO bucket."""
+    def upload_bytes(self, data: bytes, bucket: str, s3_key: str) -> None:
+        """Upload raw bytes to a MinIO bucket. Raises on failure."""
         if not self.s3_client:
-            log.warning("S3 client not initialized. Skipping upload.")
-            return False
-        try:
-            self.s3_client.put_object(
-                Bucket=bucket,
-                Key=s3_key,
-                Body=data,
-                ContentType="application/zip",
-            )
-            log.info(f"Uploaded bytes → {bucket}/{s3_key} ({len(data)} bytes)")
-            return True
-        except Exception as e:
-            log.error(f"Failed to upload bytes to {bucket}/{s3_key}: {e}")
-            return False
+            raise RuntimeError("S3 client not initialized — cannot upload bytes")
+        self.s3_client.put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=data,
+            ContentType="application/zip",
+        )
+        log.info(f"Uploaded bytes → {bucket}/{s3_key} ({len(data)} bytes)")
 
     def get_gold_master_source(
         self, challenge_name: str, tier: str, language: str

@@ -47,6 +47,9 @@ public class Problem {
     @Column(columnDefinition = "text[]")
     private List<String> tags;
 
+    @Column(name = "is_published", nullable = false)
+    private boolean isPublished = false;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -114,6 +117,10 @@ public class Problem {
 
     public List<String> getTags() {
         return tags;
+    }
+
+    public boolean isPublished() {
+        return isPublished;
     }
 
     public Instant getCreatedAt() {
