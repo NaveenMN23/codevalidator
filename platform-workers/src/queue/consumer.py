@@ -170,16 +170,16 @@ class GradingConsumer:
                         # 2. Semantic Caching
                         submission_str = json.dumps(job.files, sort_keys=True)
                         diff_hash = cache_client.get_diff_hash(submission_str)
-                        
+
                         cached_feedback = cache_client.get_semantic_cache(job.challengeId, diff_hash)
-                        
+
                         if cached_feedback:
                             logger.info("Semantic cache hit for AI feedback")
                             result["feedback"] = cached_feedback
                         else:
                             # 3. Filter files for AI evaluation (Optimization)
                             filtered_submission_str = self.llm_evaluator._filter_files(job.files, blueprint)
-                            
+
                             # 4. Call LLM (With Prompt Caching support)
                             feedback = self.llm_evaluator.evaluate(
                                 blueprint=blueprint,
@@ -190,12 +190,17 @@ class GradingConsumer:
                             result["feedback"] = feedback
                             # Store in semantic cache
                             cache_client.set_semantic_cache(job.challengeId, diff_hash, feedback)
-                        
+
                         # Publish again with AI feedback
                         logger.info(f"Publishing AI feedback for submission {submission_id}")
                         self.publisher.publish(submission_id, result)
                     else:
                         logger.warning(f"AI Evaluation skipped: No blueprint found for challenge {job.challengeId}")
+                        result["feedback"] = {
+                            "skipped": True,
+                            "reason": "evaluation_context_unavailable",
+                        }
+                        self.publisher.publish(submission_id, result)
                 except Exception as eval_error:
                     logger.error(f"AI Evaluation failed (non-blocking): {eval_error}")
             

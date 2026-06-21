@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppStore } from '../../../store';
-import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Eye, EyeOff, UserPlus } from 'lucide-react';
 
 const signupSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
@@ -15,10 +15,40 @@ const signupSchema = z.object({
 
 type SignupFormValues = z.infer<typeof signupSchema>;
 
+const CARD: React.CSSProperties = {
+  background: 'var(--bg-panel)',
+  borderRadius: 16,
+  padding: '40px 36px',
+  width: '100%',
+  maxWidth: 420,
+  border: '1px solid var(--border-main)',
+};
+
+const INPUT: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 14px',
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border-main)',
+  borderRadius: 8,
+  fontSize: 14,
+  color: 'var(--text-main)',
+  outline: 'none',
+  boxSizing: 'border-box',
+};
+
+const LABEL: React.CSSProperties = {
+  display: 'block',
+  marginBottom: 6,
+  fontSize: 13,
+  fontWeight: 500,
+  color: 'var(--text-main)',
+};
+
 export function Signup() {
   const login = useAppStore(state => state.login);
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [showPw, setShowPw] = useState(false);
 
   const {
     register,
@@ -36,7 +66,7 @@ export function Signup() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...values,
-          name: values.name || values.username // Default name to username if not provided
+          name: values.name || values.username,
         }),
       });
 
@@ -54,71 +84,93 @@ export function Signup() {
   }, [login, navigate]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh]">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="glass-panel p-8 w-full max-w-md"
-      >
-        <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-white mb-2">Create Account</h2>
-          <p className="text-slate-400 text-sm">Join the platform to start coding</p>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={CARD}>
+        {/* Icon */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+          <div style={{ width: 52, height: 52, background: '#000', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <UserPlus size={26} color="#fff" />
+          </div>
         </div>
 
+        <h1 style={{ textAlign: 'center', fontSize: 22, fontWeight: 700, margin: '0 0 6px', color: 'var(--text-main)' }}>
+          Create your account
+        </h1>
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', margin: '0 0 28px', fontSize: 14 }}>
+          Join the platform and start coding today
+        </p>
+
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-sm mb-6">
+          <p style={{ color: '#dc2626', fontSize: 13, margin: '0 0 16px', padding: '8px 12px', background: '#fee2e2', borderRadius: 6 }}>
             {error}
-          </div>
+          </p>
         )}
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate>
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-slate-400 mb-1">Username</label>
-            <input 
-              id="username"
-              type="text" 
+            <label style={LABEL}>Username</label>
+            <input
+              type="text"
               {...register('username')}
-              className="w-full bg-background/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-primary transition-colors"
               placeholder="johndoe"
+              style={INPUT}
             />
-            {errors.username && <p className="text-red-400 text-xs mt-1" role="alert">{errors.username.message}</p>}
+            {errors.username && <p style={{ color: '#dc2626', fontSize: 12, margin: '4px 0 0' }}>{errors.username.message}</p>}
           </div>
+
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-400 mb-1">Email</label>
-            <input 
-              id="email"
-              type="email" 
+            <label style={LABEL}>Email</label>
+            <input
+              type="email"
               {...register('email')}
-              className="w-full bg-background/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-primary transition-colors"
               placeholder="you@example.com"
+              style={INPUT}
             />
-            {errors.email && <p className="text-red-400 text-xs mt-1" role="alert">{errors.email.message}</p>}
+            {errors.email && <p style={{ color: '#dc2626', fontSize: 12, margin: '4px 0 0' }}>{errors.email.message}</p>}
           </div>
+
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-400 mb-1">Password</label>
-            <input 
-              id="password"
-              type="password" 
-              {...register('password')}
-              className="w-full bg-background/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-primary transition-colors"
-              placeholder="••••••••"
-            />
-            {errors.password && <p className="text-red-400 text-xs mt-1" role="alert">{errors.password.message}</p>}
+            <label style={LABEL}>Password</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPw ? 'text' : 'password'}
+                {...register('password')}
+                placeholder="Password"
+                style={{ ...INPUT, paddingRight: 40 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw(!showPw)}
+                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0, display: 'flex' }}
+              >
+                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            {errors.password && <p style={{ color: '#dc2626', fontSize: 12, margin: '4px 0 0' }}>{errors.password.message}</p>}
           </div>
-          
-          <button 
+
+          <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-white text-black hover:bg-slate-200 font-medium py-2.5 rounded-lg transition-colors mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ width: '100%', padding: '11px 0', background: '#000', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1, marginTop: 4 }}
           >
-            {isSubmitting ? 'Creating Account...' : 'Create Account'}
+            {isSubmitting ? 'Creating account…' : 'Create Account'}
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-slate-400">
-          Already have an account? <Link to="/login" className="text-primary hover:text-primary/80">Log in</Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0 16px' }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--border-main)' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>OR</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--border-main)' }} />
         </div>
-      </motion.div>
+
+        <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-muted)', margin: 0 }}>
+          Already have an account?{' '}
+          <Link to="/login" style={{ color: 'var(--accent-color)', textDecoration: 'none', fontWeight: 500 }}>
+            Log in
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

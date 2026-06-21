@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     rabbitmq_user: str = "admin"
     rabbitmq_password: str = "password"
     blueprint_queue: str = "blueprint-queue"
+    codegen_request_queue: str = "codegen-request-queue"
+    codegen_results_queue: str = "codegen-results-queue"
 
     # Backend
     backend_url: str = "http://platform-backend:8080"

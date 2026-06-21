@@ -28,6 +28,24 @@ Return a single JSON object with exactly these keys:
       "space": "O(1) or O(n) etc."
     }
   },
+  "scope": {
+    "inScope": [
+      "The specific function or file the candidate must implement or fix"
+    ],
+    "outOfScope": [
+      "Adjacent infrastructure or helpers that are already provided and should not be touched"
+    ]
+  },
+  "expectedApproaches": [
+    {
+      "label": "Optimal",
+      "description": "Brief description of the preferred approach and why it is best for this scenario"
+    },
+    {
+      "label": "Acceptable",
+      "description": "A valid but less elegant approach that still satisfies the requirements"
+    }
+  ],
   "repo": {
     "relevantFiles": [
       "src/services/cancellation.ts"
@@ -59,6 +77,7 @@ Return a single JSON object with exactly these keys:
       }
     }
   },
+  "interviewerFocusArea": "2-3 sentences describing what the interviewer should probe first, which trade-offs to surface, and what distinguishes a senior answer from a junior one in a live session for THIS specific scenario.",
   "followUpContext": "2-4 sentences describing the key design decisions, trade-offs, and edge cases an interviewer would probe in a follow-up discussion for THIS specific scenario. What separates a junior from a senior answer here?"
 }
 ```
@@ -66,10 +85,14 @@ Return a single JSON object with exactly these keys:
 ## Rules
 
 - `task.description` must describe the SCENARIO-SPECIFIC fix, not the general challenge
+- `scope.inScope` lists only the functions, files, or behaviors the candidate must touch for THIS scenario
+- `scope.outOfScope` explicitly names what is already provided so the interviewer knows not to penalise gaps there
+- `expectedApproaches` must include at least one "Optimal" entry; add an "Acceptable" entry only when multiple valid solution paths exist
 - `repo.relevantFiles` lists only the files the student needs to read or touch to complete THIS scenario
 - `targetFile` is the single most important file — the one containing the primary missing implementation
 - `evaluation.senioritySignals` must be concrete, checkable observations (not generic praise). List 3-5 specific things a correct solution does that a mediocre one misses.
 - `evaluation.commonMistakes` must be real pitfalls observed in actual interviews at this seniority level — things students get wrong most often
 - `evaluation.rubric` anchors scores to observable behaviors so evaluation is consistent across students
+- `interviewerFocusArea` must name the specific trade-off or edge case to probe — not generic ("explain your design") but scenario-concrete ("ask why they chose X over Y here")
 - `followUpContext` must be specific to this scenario's implementation challenge (not generic "explain your design choices")
 - Output JSON only. No markdown fences, no explanation text.

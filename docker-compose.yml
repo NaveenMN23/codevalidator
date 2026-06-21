@@ -102,6 +102,12 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health 2>/dev/null | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
 
   codegen:
     build: ./platform-codegen
@@ -122,6 +128,8 @@ services:
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=admin
       - RABBITMQ_PASSWORD=password
+      - CODEGEN_REQUEST_QUEUE=codegen-request-queue
+      - CODEGEN_RESULTS_QUEUE=codegen-results-queue
     volumes:
       - ./challenges:/challenges
       - ./generated:/generated
@@ -130,6 +138,38 @@ services:
       - minio
       - redis
       - rabbitmq
+
+  admin-backend:
+    build: ./admin-backend
+    container_name: interview_admin_backend
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/interview_db
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: admin
+      SPRING_RABBITMQ_PASSWORD: password
+      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-long-random-secret-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  admin-ui:
+    build: ./admin-ui
+    container_name: interview_admin_ui
+    ports:
+      - "5174:80"
+    depends_on:
+      - admin-backend
 
   ui:
     build: ./platform-ui

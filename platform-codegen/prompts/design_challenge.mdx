@@ -12,6 +12,7 @@ You will receive:
 - `<tiers>` — comma-separated tiers to generate (e.g. `easy` or `easy,medium,hard`)
 - `<scenarios_per_tier>` — how many scenarios each tier must have (integer)
 - `<problem>` — the problem description
+- `<admin_feedback>` *(optional)* — revision notes from the admin who reviewed a previous design
 
 Output a structured JSON design document with **ONLY the tiers listed in `<tiers>`**. Each tier is a **single codebase** with exactly **`<scenarios_per_tier>` scenarios** — each scenario strips a different function. A student is assigned one scenario; they see the same codebase but with a different function removed.
 
@@ -164,5 +165,6 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
   - HARD: last `min(2, N-1)` scenarios are `debug`, rest are `implement` (so if N=1 all implement; if N=2 last 1 is debug; if N≥3 last 2 are debug)
   - Examples: N=1 → all implement; N=2 → EASY 2 impl, MEDIUM 1+1, HARD 1+1; N=3 → EASY 3 impl, MEDIUM 2+1, HARD 1+2; N=4 → EASY 4 impl, MEDIUM 3+1, HARD 2+2
 - Only output the tiers listed in `<tiers>` — omit any not requested
+- **IF `<admin_feedback>` IS PROVIDED:** Treat it as mandatory revision instructions. You MUST incorporate the feedback — change scenario types, swap mechanisms, adjust architecture, or redesign entire tiers as directed. Keep the same `challenge.name` and domain unless the feedback explicitly requests a change.
 - Output JSON only. No markdown fences, no explanation text.
 - **IF `<few_shot_examples>` ARE PROVIDED:** You must thoroughly analyze the architecture, naming conventions, and package layout of the repositories inside `<few_shot_examples>`. Synthesize their structural style and adapt your `codebase_files` and `entities` so they closely mimic those references.

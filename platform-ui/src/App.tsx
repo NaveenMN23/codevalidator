@@ -17,11 +17,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function App() {
   const location = useLocation();
   const isWorkspace = location.pathname.startsWith('/workspace');
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
+  const showNavbar = !isWorkspace && !isAuthPage;
 
   return (
     <div className="h-screen bg-background text-text-main flex flex-col font-sans overflow-hidden">
-      {!isWorkspace && <Navbar />}
-      <main className={`flex-grow flex flex-col min-h-0 ${isWorkspace ? '' : 'pt-[72px]'}`}>
+      {showNavbar && <Navbar />}
+      <main className={`flex-grow flex flex-col min-h-0 ${showNavbar ? 'pt-[60px]' : ''}`}>
         <Suspense fallback={<div className="flex h-full items-center justify-center bg-background text-text-muted font-medium">Loading...</div>}>
           <Routes>
             <Route path="/" element={<DashboardPage />} />

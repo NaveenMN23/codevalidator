@@ -4,6 +4,7 @@ from loguru import logger
 from src.config import settings
 from typing import Dict, Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from anthropic import APIConnectionError, APITimeoutError, RateLimitError
 
 class LLMEvaluator:
     def __init__(self):
@@ -56,8 +57,8 @@ class LLMEvaluator:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((anthropic.APIConnectionError, anthropic.APITimeoutError, ConnectionError)),
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        retry=retry_if_exception_type((APIConnectionError, APITimeoutError, RateLimitError, ConnectionError)),
         reraise=True
     )
     def _create_message(self, system_prompt: str, blueprint: Dict[str, Any], submission_diff: str):
@@ -103,12 +104,15 @@ class LLMEvaluator:
         # Determine follow-up type based on time (Phase 4 logic)
         follow_up_type = "IMPLEMENTATION" if remaining_time > 900 else "CONVERSATIONAL"
         
-        system_prompt = f"""You are a senior software engineer interviewer. 
+        system_prompt = f"""You are a senior software engineer interviewer.
 Evaluate the candidate's code submission (diff) against the provided Blueprint.
 
 TASK DESCRIPTION: {blueprint.get('task', {}).get('description', 'N/A')}
 CONSTRAINTS: {blueprint.get('task', {}).get('constraints', [])}
 EXPECTED COMPLEXITY: {blueprint.get('task', {}).get('expectedComplexity', {})}
+SCOPE: {blueprint.get('scope', {})}
+EXPECTED APPROACHES: {blueprint.get('expectedApproaches', [])}
+INTERVIEWER FOCUS: {blueprint.get('interviewerFocusArea', 'N/A')}
 
 You must provide feedback in three layers:
 1. Correctness Finding

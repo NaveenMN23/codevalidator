@@ -421,7 +421,7 @@ export function Workspace() {
 
   if (isBooting) {
     return (
-      <div className="flex h-full items-center justify-center bg-background text-slate-400">
+      <div className="flex h-full items-center justify-center bg-background text-text-muted">
         <div className="flex flex-col items-center gap-4">
           <RefreshCcw className="animate-spin text-primary" size={40} />
           <p className="animate-pulse">Booting your environment...</p>
