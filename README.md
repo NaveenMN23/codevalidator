@@ -14,7 +14,7 @@ For a detailed technical breakdown, see the **[Architecture Documentation](./ARC
 ## Service Map
 - **[Platform Backend](./platform-backend):** Java (Spring Boot) managing core logic, users, and asynchronous submissions.
 - **[Platform UI](./platform-ui):** React (Vite) frontend providing the "CodeForge" IDE experience.
-- **[Platform Workers](./platform-workers):** Python workers performing isolated grading in Docker sandboxes.
+- **[Execution Service](./platform-execution_service):** Python service running user code in isolated, session-pinned Docker containers (Deferred Eager — see `docs/design/deferred-eager-final-architecture.md`).
 - **[Codegen](./platform-codegen):** Service for generating challenge assets from reference repositories.
 
 ## Getting Started

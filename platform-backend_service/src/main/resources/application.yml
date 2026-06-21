@@ -21,6 +21,8 @@ app:
   jwt:
     secret: ${JWT_SECRET:change-this-to-a-256-bit-secret-in-every-environment}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+  execution-service:
+    base-url: ${EXECUTION_SERVICE_URL:http://localhost:8001}
 
 management:
   endpoints:
@@ -45,6 +47,13 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 5
+  bulkhead:
+    instances:
+      executionService:
+        # Placeholder — needs sizing against the Execution Service's real concurrent
+        # capacity (see docs/design/deferred-eager-final-architecture.md §6 item 6).
+        max-concurrent-calls: 50
+        max-wait-duration: 2s
 
 logging:
   level:
