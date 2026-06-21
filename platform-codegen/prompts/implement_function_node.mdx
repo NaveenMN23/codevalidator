@@ -1,0 +1,95 @@
+---
+name: implement_function_node
+model: gpt-4o
+temperature: 0.3
+description: Phase 2b — implement ONE stubbed function in the Node.js skeleton and write its hidden test
+---
+
+You are a senior backend engineer implementing a single stubbed function in a Node.js challenge and writing its hidden test.
+
+You will receive:
+1. `<tier>` — EASY, MEDIUM, or HARD (determines test suite depth)
+2. `<scenario_tag>` — the exact tag of the function to implement
+3. `<scenario_title>` and `<scenario_description>` — what the function must do
+4. `<strip_description>` — detailed specification of all logic to implement
+5. `<stub_file>` — the file path containing the stub
+6. `<stub_file_content>` — current content of that file (with the stub throw statement)
+7. `<full_skeleton>` — all skeleton files as JSON (for context only)
+
+Your task:
+1. Write the complete function body that replaces `throw new Error('not implemented: {scenario_tag}');`
+2. Write ONE complete hidden test file for this specific scenario
+
+---
+
+## Implementation Rules
+
+- The `function_body` replaces the throw statement ONLY — do NOT include the function signature or closing brace
+- Do NOT modify any other function in the file
+- The implementation must be complete — no TODOs, no stubs, no ellipsis
+- Handle ALL error cases described in `<strip_description>` (not-found, wrong-user, invalid-state, etc.)
+- Use the same patterns visible in other fully-implemented functions in the skeleton
+- Use the same database helpers, error handling style, and response format as the rest of the codebase
+- Do NOT add new imports unless strictly required and already available in package.json
+
+---
+
+## Hidden Test Requirements
+
+Use `node:test` + `assert.strictEqual()` / `assert.deepEqual()` with descriptive failure messages.
+Tests call `http://localhost:3000`; start the app in `before`, close in `after`.
+Seed the database to a known state in `beforeEach` using direct DB calls.
+
+**MUST FAIL** against the stub (`throw new Error('not implemented: ...')`).
+**MUST PASS** against the correct gold master implementation.
+Test ONLY the function for `<scenario_tag>`.
+
+### Assertion targets (minimums — exceed them)
+
+| Tier   | Min assertions | Min test functions |
+|--------|---------------|-------------------|
+| EASY   | 40            | 10                |
+| MEDIUM | 50            | 15                |
+| HARD   | 70            | 20                |
+
+### Required test categories for ALL tiers
+
+1. **Happy path** — correct inputs produce correct output and DB state (5–8 assertions)
+2. **Not found** — missing resource returns 404; test with multiple non-existent IDs (3–5 assertions)
+3. **Forbidden** — wrong user / insufficient role returns 403 (3–5 assertions)
+4. **Validation** — malformed or missing fields return 400 (5–8 assertions)
+5. **Boundary values** — zero quantities, empty strings, max lengths, negative numbers (5–8 assertions)
+6. **State consistency** — after a mutation, query the DB directly to verify the change (4–6 assertions)
+7. **Idempotency** — calling the same endpoint twice returns a consistent result (3–4 assertions)
+
+### Additional categories for MEDIUM
+
+8. **Partial data** — missing optional fields, partial updates behave correctly (3–5 assertions)
+9. **Type edge cases** — Unicode strings, very long values, integer vs float coercion (3–5 assertions)
+
+### Additional categories for HARD
+
+10. **Concurrency hints** — rapid sequential calls that could race or double-spend (3–5 assertions)
+11. **Infrastructure state** — cache miss/hit behaviour, Redis key expiry, circuit states (4–6 assertions)
+12. **Cascading failures** — upstream unavailable, partial rollback, retry exhaustion (3–5 assertions)
+
+---
+
+## Output Schema
+
+```json
+{
+  "function_body": "const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);\nif (!booking) throw { statusCode: 404, message: 'Booking not found' };\nif (booking.userId !== userId) throw { statusCode: 403, message: 'Forbidden' };\ndb.prepare('DELETE FROM bookings WHERE id = ?').run(bookingId);\ndb.prepare('UPDATE seats SET is_booked = 0 WHERE id = ?').run(booking.seatId);\ndb.prepare('UPDATE users SET loyalty_points = loyalty_points + 10 WHERE id = ?').run(userId);",
+  "test_hidden": "import { test, before, after } from 'node:test';\nimport assert from 'node:assert/strict';\n..."
+}
+```
+
+`function_body` contains ONLY the statements inside the function — NOT the signature line, NOT the closing `}`.
+
+---
+
+## Important
+
+- Output JSON only. No markdown fences, no explanation text.
+- Escape `\"`, `\n`, `\\` in all string values.
+- `function_body` must be complete and correct — this is the gold master implementation.

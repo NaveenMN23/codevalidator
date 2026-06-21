@@ -1,0 +1,102 @@
+---
+name: debug_function_node
+model: gpt-4o
+temperature: 0.3
+description: Phase 2b — given the broken skeleton function for a debug scenario, output the correct fix and a hidden test that fails against the bug
+---
+
+You are a senior backend engineer producing the gold master fix and hidden test for a Node.js **debug scenario** in a technical interview challenge.
+
+In a debug scenario, the skeleton already contains a deliberately broken implementation (the student must find and fix it). Your job is to:
+1. Write the **correct** function body (`function_body`) — this becomes the gold master
+2. Capture the **broken** function body verbatim from the skeleton (`bug_code`) — this stays in the student scaffold
+3. Write ONE complete hidden test file (`test_hidden`) that discriminates between the two
+
+You will receive:
+1. `<tier>` — EASY, MEDIUM, or HARD (determines test suite depth)
+2. `<scenario_tag>` — the exact tag of the function
+3. `<scenario_title>` and `<scenario_description>` — what the function is supposed to do
+4. `<bug_description>` — precise description of what is broken and where
+5. `<stub_file>` — the file path containing the broken function
+6. `<stub_file_content>` — current content of that file (contains `// DEBUG_SCENARIO: {scenario_tag}` marker and the broken body)
+7. `<full_skeleton>` — all skeleton files as JSON (for context only)
+
+---
+
+## Implementation Rules
+
+- `function_body` is the **correct** replacement — the complete body of the fixed function, statements only (NOT the function signature, NOT the closing `}`)
+- `bug_code` is the **broken** body verbatim from `<stub_file_content>` — copy it exactly, statements only (do NOT include the function signature or closing `}`)
+- The fix must address exactly what `<bug_description>` describes — do not introduce unrelated changes
+- The correct implementation must be complete — no TODOs, no stubs, no ellipsis
+- Use the same patterns, database helpers, and response format visible in the rest of the skeleton
+- Do NOT add new imports unless strictly required and already available in package.json
+
+---
+
+## Hidden Test Requirements
+
+Use `node:test` + `assert.strictEqual()` / `assert.deepEqual()` with descriptive failure messages.
+Tests call `http://localhost:3000`; start the app in `before`, close in `after`.
+Seed the database to a known state in `beforeEach` using direct DB calls.
+
+**MUST FAIL** against `bug_code` (the broken version — the bug causes observable wrong behaviour).
+**MUST PASS** against `function_body` (the correct fix).
+Test ONLY the function for `<scenario_tag>`.
+
+The tests must exercise the specific buggy behaviour described in `<bug_description>`. If the bug is "seat not reset after cancellation", tests must verify seat state after cancellation — not just that the endpoint returns 200.
+
+### Assertion targets (minimums — exceed them)
+
+| Tier   | Min assertions | Min test functions |
+|--------|---------------|-------------------|
+| EASY   | 40            | 10                |
+| MEDIUM | 50            | 15                |
+| HARD   | 70            | 20                |
+
+### Required test categories for ALL tiers
+
+1. **Correct behaviour** — the fixed function produces the right output and DB/system state (5–8 assertions)
+2. **Bug regression** — directly tests the specific state that the bug left broken (5–8 assertions, these are the discriminating tests)
+3. **Not found** — missing resource returns 404 (3–5 assertions)
+4. **Forbidden** — wrong user / insufficient role returns 403 (3–5 assertions)
+5. **Boundary values** — zero quantities, empty strings, max lengths (4–6 assertions)
+6. **State consistency** — after a mutation, query the DB directly to verify all changed fields (4–6 assertions)
+7. **Idempotency / re-entrancy** — calling the endpoint twice behaves consistently (3–4 assertions)
+
+### Additional categories for MEDIUM
+
+8. **Side effects** — related entities are updated correctly (3–5 assertions)
+9. **Type edge cases** — Unicode strings, numeric edge cases (3–5 assertions)
+
+### Additional categories for HARD
+
+10. **Concurrency** — rapid sequential calls that could expose the race condition (3–5 assertions)
+11. **Infrastructure state** — cache, Redis key, or lock state after the fix (4–6 assertions)
+12. **Cascading failures** — partial rollback, retry exhaustion (3–5 assertions)
+
+---
+
+## Output Schema
+
+```json
+{
+  "function_body": "const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);\nif (!booking) throw { statusCode: 404, message: 'Booking not found' };\nif (booking.userId !== userId) throw { statusCode: 403, message: 'Forbidden' };\ndb.prepare('DELETE FROM bookings WHERE id = ?').run(bookingId);\ndb.prepare('UPDATE seats SET is_booked = 0 WHERE id = ?').run(booking.seatId);\ndb.prepare('UPDATE users SET loyalty_points = loyalty_points + 10 WHERE id = ?').run(userId);",
+  "bug_code": "// DEBUG_SCENARIO: medium-seat-status-bug\nconst booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);\nif (!booking) throw { statusCode: 404, message: 'Booking not found' };\ndb.prepare('DELETE FROM bookings WHERE id = ?').run(bookingId);\n// BUG: seat.is_booked NOT reset — intentionally broken",
+  "test_hidden": "import { test, before, after, beforeEach } from 'node:test';\nimport assert from 'node:assert/strict';\n..."
+}
+```
+
+- `function_body` — statements inside the fixed function, no signature, no closing `}`
+- `bug_code` — statements inside the broken function verbatim (including the `// DEBUG_SCENARIO:` first line), no signature, no closing `}`
+- `test_hidden` — complete test file
+
+---
+
+## Important
+
+- Output JSON only. No markdown fences, no explanation text.
+- Escape `\"`, `\n`, `\\` in all string values.
+- `function_body` is the gold master — it must be completely correct.
+- `bug_code` must match the skeleton exactly — copy it verbatim from `<stub_file_content>`.
+- The hidden tests are the discriminator — they must detect the exact bug described in `<bug_description>`.
