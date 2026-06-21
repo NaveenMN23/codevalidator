@@ -1,7 +1,7 @@
 package com.interview.mainservice.service;
 
-import com.interview.mainservice.dto.RunRequest;
 import com.interview.mainservice.dto.RunResponse;
+import com.interview.mainservice.dto.SubmitRequest;
 import com.interview.mainservice.model.Problem;
 import com.interview.mainservice.repository.ProblemRepository;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
@@ -11,29 +11,37 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-public class RunService {
+public class SubmitService {
 
-    // v1 is Java-first per docs/design/deferred-eager-final-architecture.md; Problem has no
-    // language column yet — generalize this once Node/Python challenges are added.
+    // Same command as Run — both just run `mvn test`; the difference is Submit has the hidden
+    // test injected first. Matches the existing "one-at-a-time" failure feedback the platform
+    // already uses for grading.
     private static final String LANGUAGE = "java";
-    private static final String RUN_COMMAND = "mvn -o test -Dsurefire.skipAfterFailureCount=1";
+    private static final String SUBMIT_COMMAND = "mvn -o test -Dsurefire.skipAfterFailureCount=1";
 
     private final ProblemRepository problemRepository;
     private final ExecutionServiceClient executionServiceClient;
 
-    public RunService(ProblemRepository problemRepository, ExecutionServiceClient executionServiceClient) {
+    public SubmitService(ProblemRepository problemRepository, ExecutionServiceClient executionServiceClient) {
         this.problemRepository = problemRepository;
         this.executionServiceClient = executionServiceClient;
     }
 
-    public RunResponse run(UUID userId, UUID problemId, RunRequest request) {
+    public RunResponse submit(UUID userId, UUID problemId, SubmitRequest request) {
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
 
+        String tier = problem.getTier();
+        if (tier == null || tier.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Problem has no tier configured — cannot locate its hidden test");
+        }
+
+        // Same session id as Run — reuses the session's warm container rather than a fresh one.
         String sessionId = SessionIdentifier.of(userId, problemId);
         try {
-            return executionServiceClient.execute(sessionId, problem.getSlug(), LANGUAGE,
-                    request.files(), RUN_COMMAND);
+            return executionServiceClient.submit(sessionId, problem.getSlug(), tier, LANGUAGE,
+                    request.files(), SUBMIT_COMMAND);
         } catch (BulkheadFullException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Execution Service is at capacity, try again shortly");

@@ -10,6 +10,8 @@ import docker
 import docker.errors
 from loguru import logger
 
+from src.gold_master_client import gold_master_client
+
 SESSION_STAGING_ROOT = "/tmp/sessions"
 
 # Name of the persistent internal bridge network used for sandboxed execution.
@@ -31,6 +33,13 @@ class SessionEntry:
     language: str
     staging_dir: str
     last_activity: float = field(default_factory=time.time)
+    # Guards this session's own write+exec sequence — NOT the manager's global self._lock
+    # (which only protects the _sessions dict itself). Holding the global lock across a
+    # multi-second exec would serialize every session through the whole service; this lock
+    # only ever blocks another Run/Submit on the *same* session, which is fine since one
+    # browser tab can't really do two things on one session at once anyway. Submit relies on
+    # this to keep the hidden test file safe from a concurrent Run on the same session.
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 class SessionContainerManager:
@@ -68,14 +77,45 @@ class SessionContainerManager:
 
     def execute(self, session_id: str, challenge_id: str, language: str,
                 files: Dict[str, str], command: str) -> dict:
+        entry = self._get_or_create_entry(session_id, challenge_id, language)
+
+        with entry.lock:
+            self._write_files(entry.staging_dir, files)
+            with self._lock:
+                entry.last_activity = time.time()
+            return self._run_with_timeout(session_id, entry.container_id, command)
+
+    def submit(self, session_id: str, challenge_id: str, tier: str, language: str,
+               files: Dict[str, str], command: str) -> dict:
+        entry = self._get_or_create_entry(session_id, challenge_id, language)
+
+        with entry.lock:
+            self._write_files(entry.staging_dir, files)
+
+            gold_master = gold_master_client.fetch(challenge_id, tier, language)
+            self._write_files(entry.staging_dir, gold_master["locked_files"])
+            hidden_test_path = gold_master["hidden_test_path"]
+            self._write_files(entry.staging_dir, {hidden_test_path: gold_master["hidden_test_content"]})
+
+            with self._lock:
+                entry.last_activity = time.time()
+
+            try:
+                return self._run_with_timeout(session_id, entry.container_id, command)
+            finally:
+                # Hidden test never lingers past this one Submit call — locked files are left
+                # in place (they're not secret, just infra a student shouldn't have tampered
+                # with, and correcting them benefits any later Run on this session too).
+                self._delete_file(entry.staging_dir, hidden_test_path)
+
+    def _get_or_create_entry(self, session_id: str, challenge_id: str, language: str) -> SessionEntry:
         with self._lock:
             entry = self._sessions.get(session_id)
             if entry is None or not self._container_alive(entry.container_id):
                 entry = self._create_session(session_id, challenge_id, language)
-            self._write_files(entry.staging_dir, files)
-            entry.last_activity = time.time()
-            container_id = entry.container_id
+            return entry
 
+    def _run_with_timeout(self, session_id: str, container_id: str, command: str) -> dict:
         future = self._exec_pool.submit(self._exec_in_container, container_id, command)
         try:
             return future.result(timeout=self.exec_timeout_seconds)
@@ -171,6 +211,13 @@ class SessionContainerManager:
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w") as f:
                 f.write(content)
+
+    def _delete_file(self, staging_dir: str, rel_path: str):
+        full_path = os.path.join(staging_dir, rel_path)
+        try:
+            os.remove(full_path)
+        except FileNotFoundError:
+            pass
 
     def _exec_in_container(self, container_id: str, command: str) -> dict:
         container = self.client.containers.get(container_id)

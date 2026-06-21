@@ -179,6 +179,10 @@ services:
     container_name: platform_execution_service
     ports:
       - "8001:8001"
+    environment:
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=password
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/sessions:/tmp/sessions
@@ -186,6 +190,8 @@ services:
     depends_on:
       java-executor-build:
         condition: service_completed_successfully
+      minio:
+        condition: service_healthy
 
 volumes:
   minio_data:

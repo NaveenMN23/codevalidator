@@ -68,8 +68,45 @@ public class ExecutionServiceClient {
         }
     }
 
+    // Same shared Bulkhead instance as execute() — Run and Submit compete for the same
+    // Execution Service/Docker host capacity, so they share one concurrency budget rather than
+    // each getting their own.
+    @Bulkhead(name = "executionService", type = Bulkhead.Type.SEMAPHORE)
+    public RunResponse submit(String sessionId, String challengeId, String tier, String language,
+                               Map<String, String> files, String command) {
+        try {
+            SubmitRequestBody body = new SubmitRequestBody(sessionId, challengeId, tier, language, files, command);
+            String json = objectMapper.writeValueAsString(body);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/submit"))
+                    .timeout(Duration.ofSeconds(90))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                return new RunResponse(false, "", "Execution Service returned HTTP " + response.statusCode(), -1);
+            }
+
+            ExecuteResponseBody parsed = objectMapper.readValue(response.body(), ExecuteResponseBody.class);
+            return new RunResponse(parsed.success(), parsed.stdout(), parsed.stderr(), parsed.exitCode());
+        } catch (IOException e) {
+            return new RunResponse(false, "", "Failed to reach Execution Service: " + e.getMessage(), -1);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new RunResponse(false, "", "Execution interrupted", -1);
+        }
+    }
+
     private record ExecuteRequestBody(String sessionId, String challengeId, String language,
                                        Map<String, String> files, String command) {
+    }
+
+    private record SubmitRequestBody(String sessionId, String challengeId, String tier, String language,
+                                      Map<String, String> files, String command) {
     }
 
     private record ExecuteResponseBody(boolean success, String stdout, String stderr,

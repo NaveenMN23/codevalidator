@@ -54,6 +54,29 @@ async def execute(req: ExecuteRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class SubmitRequest(BaseModel):
+    sessionId: str
+    challengeId: str
+    tier: str
+    language: str
+    files: Dict[str, str]
+    command: str
+
+
+@app.post("/submit", response_model=ExecuteResponse)
+async def submit(req: SubmitRequest):
+    try:
+        return await run_in_threadpool(
+            session_manager.submit,
+            req.sessionId, req.challengeId, req.tier, req.language, req.files, req.command,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Submit failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class BuildChallengeImageRequest(BaseModel):
     challengeId: str
     language: str
