@@ -95,6 +95,7 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: admin
       SPRING_RABBITMQ_PASSWORD: password
+      EXECUTION_SERVICE_URL: http://execution-service:8001
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,6 +103,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      execution-service:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health 2>/dev/null | grep -q UP"]
       interval: 10s
@@ -118,6 +121,7 @@ services:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=admin
       - MINIO_SECRET_KEY=password
+      - EXECUTION_SERVICE_URL=http://execution-service:8001
       - REDIS_HOST=redis
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
@@ -138,6 +142,7 @@ services:
       - minio
       - redis
       - rabbitmq
+      - execution-service
 
   admin-backend:
     build: ./admin-backend
@@ -180,48 +185,56 @@ services:
       - backend
 
   # Builds the Node.js executor image with all challenge deps at /preinstalled_modules.
-  # Workers use the image directly — no shared volume seeding needed.
+  # Not yet consumed by anything (execution-service only supports Java so far) — kept
+  # ready for when Node support is added there.
   node-deps-init:
     build:
-      context: ./platform-workers/executors/node
+      context: ./platform-execution_service/executors/node
     image: platform/node-executor:latest
     command: echo "Node.js executor image ready"
 
-  # Builds the Python executor image with all challenge deps baked in.
+  # Builds the Python executor image with all challenge deps baked in. Not yet consumed
+  # by anything (execution-service only supports Java so far) — kept ready for when
+  # Python support is added there.
   python-executor-build:
     build:
-      context: ./platform-workers/executors/python
+      context: ./platform-execution_service/executors/python
     image: platform/python-executor:latest
     command: echo "Python executor image built"
 
-  workers:
-    build: ./platform-workers
-    # container_name omitted to allow: docker compose up --scale workers=N
+  # Builds the Java executor image with the base Spring Boot dependency tree
+  # baked into the local Maven repo via `mvn dependency:go-offline`.
+  java-executor-build:
+    build:
+      context: ./platform-execution_service/executors/java
+    image: platform/java-executor:latest
+    command: echo "Java executor image built"
+
+  # Deferred Eager session-container manager for Run (see
+  # docs/design/deferred-eager-final-architecture.md) — owns long-lived, session-pinned
+  # containers behind a synchronous HTTP API. Submit/grading will move here too; the
+  # previous separate `platform-workers` RabbitMQ-based grading service has been removed.
+  execution-service:
+    build: ./platform-execution_service
+    container_name: platform_execution_service
+    ports:
+      - "8001:8001"
     environment:
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_USER=admin
-      - RABBITMQ_PASSWORD=password
-      - REDIS_HOST=redis
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - ENABLE_AI_EVALUATION=true
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=password
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/grading_stages:/tmp/grading_stages
+      - /tmp/sessions:/tmp/sessions
       - ./challenges:/challenges:ro
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      node-deps-init:
+      java-executor-build:
         condition: service_completed_successfully
-      python-executor-build:
-        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
 
 volumes:
   minio_data:
   postgres_data:
   redis_data:
   rabbitmq_data:
-  platform_npm_cache:
-  platform_maven_cache:

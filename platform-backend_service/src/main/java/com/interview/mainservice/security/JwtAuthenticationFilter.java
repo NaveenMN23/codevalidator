@@ -24,6 +24,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        // RunController completes its response via DeferredResult from a separate
+        // (virtual-thread) executor, so the servlet container performs a second, async
+        // dispatch back through the filter chain on a different thread to write the
+        // response. OncePerRequestFilter skips itself on that dispatch by default, which
+        // left SecurityContextHolder empty on that thread — Spring Security's
+        // AuthorizationFilter then re-checks .authenticated() against that empty context
+        // and rejects with 403, even though the original request was correctly
+        // authenticated. Re-running this filter (cheap: just re-reads the Authorization
+        // header, still present on the same HttpServletRequest) fixes it.
+        return false;
+    }
+
+    @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                      @NonNull HttpServletResponse response,
                                      @NonNull FilterChain filterChain) throws ServletException, IOException {

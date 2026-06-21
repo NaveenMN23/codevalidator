@@ -1,0 +1,9 @@
+{
+  "locked_files": ["pom.xml"],
+  "scenarios": {
+    "beginner-divide-by-zero": {
+      "title": "Calculator: Divide by Zero",
+      "description": "Calculator.divide throws a raw ArithmeticException on division by zero. Fix it to throw an IllegalArgumentException with a clear message instead."
+    }
+  }
+}
