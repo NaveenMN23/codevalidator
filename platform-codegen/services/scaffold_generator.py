@@ -1,5 +1,6 @@
 import json
 import re
+from infrastructure.cache import cache_client
 from infrastructure.logger import log
 from infrastructure.storage import storage_client
 from config.settings import settings
@@ -110,6 +111,37 @@ class ScaffoldGenerator:
     Phase 3: generate_blueprint × 3N → blueprints stored in Postgres + Redis
     """
 
+    def generate_design_only(
+        self,
+        problem_description: str,
+        languages: list[str] | None = None,
+        tiers: list[str] | None = None,
+        scenarios_per_tier: int = 3,
+        feedback: str | None = None,
+    ) -> dict:
+        """Run Phase 1 only — returns the DesignOutput as a dict for admin review."""
+        active_languages = languages or ["node"]
+        active_tiers = tiers or list(_TIERS)
+        llm_client.reset_session_cost()
+        clean_description = sanitizer.sanitize_description(problem_description)
+
+        design_system = llm_client.load_prompt("design_challenge")
+        feedback_block = f"\n\n<admin_feedback>\n{feedback}\n</admin_feedback>" if feedback else ""
+        design_user_msg = (
+            f"<languages>{','.join(active_languages)}</languages>\n"
+            f"<tiers>{','.join(active_tiers)}</tiers>\n"
+            f"<scenarios_per_tier>{scenarios_per_tier}</scenarios_per_tier>\n"
+            f"<problem>\n{clean_description}\n</problem>"
+            f"{feedback_block}"
+        )
+        raw_design = llm_client.complete_json(design_system, design_user_msg, label="design")
+        design: DesignOutput = validate_with_correction(
+            raw_design, DesignOutput, llm_client.complete_json,
+            design_system, design_user_msg, label="design-validate",
+        )
+        log.info(f"generate_design_only: complete — challenge={design.challenge.get('name')}")
+        return design.model_dump()
+
     def generate(
         self,
         problem_description: str,
@@ -117,6 +149,7 @@ class ScaffoldGenerator:
         use_local_few_shots: bool = False,
         tiers: list[str] | None = None,
         scenarios_per_tier: int = 3,
+        design_json: str | dict | None = None,
     ) -> dict:
         active_languages: list[str] = languages or ["node"]
         active_tiers: list[str] = tiers or list(_TIERS)
@@ -132,28 +165,26 @@ class ScaffoldGenerator:
         if use_local_few_shots:
             few_shot_context = load_few_shot_repos() + "\n"
 
-        # ── Phase 1 — Architecture Design (runs once, language-agnostic) ─────────
-        design_system = llm_client.load_prompt("design_challenge")
-        log.info(f"ScaffoldGenerator: Phase 1 (design, tiers={active_tiers}, scenarios_per_tier={scenarios_per_tier})")
-        design_user_msg = (
-            f"<languages>{','.join(active_languages)}</languages>\n"
-            f"<tiers>{','.join(active_tiers)}</tiers>\n"
-            f"<scenarios_per_tier>{scenarios_per_tier}</scenarios_per_tier>\n"
-            f"<problem>\n{clean_description}\n</problem>"
-        )
-        raw_design = llm_client.complete_json(
-            design_system,
-            design_user_msg,
-            label="design",
-        )
-        design: DesignOutput = validate_with_correction(
-            raw_design,
-            DesignOutput,
-            llm_client.complete_json,
-            design_system,
-            design_user_msg,
-            label="design-validate",
-        )
+        # ── Phase 1 — Architecture Design (skip if design_json supplied by admin) ─
+        if design_json is not None:
+            import json as _json
+            raw = design_json if isinstance(design_json, str) else _json.dumps(design_json)
+            design: DesignOutput = DesignOutput.model_validate_json(raw)
+            log.info(f"ScaffoldGenerator: Phase 1 skipped — using pre-approved design")
+        else:
+            design_system = llm_client.load_prompt("design_challenge")
+            log.info(f"ScaffoldGenerator: Phase 1 (design, tiers={active_tiers}, scenarios_per_tier={scenarios_per_tier})")
+            design_user_msg = (
+                f"<languages>{','.join(active_languages)}</languages>\n"
+                f"<tiers>{','.join(active_tiers)}</tiers>\n"
+                f"<scenarios_per_tier>{scenarios_per_tier}</scenarios_per_tier>\n"
+                f"<problem>\n{clean_description}\n</problem>"
+            )
+            raw_design = llm_client.complete_json(design_system, design_user_msg, label="design")
+            design: DesignOutput = validate_with_correction(
+                raw_design, DesignOutput, llm_client.complete_json,
+                design_system, design_user_msg, label="design-validate",
+            )
 
         # Verify the LLM produced the requested tiers with the right scenario count
         for tier in active_tiers:
@@ -172,15 +203,24 @@ class ScaffoldGenerator:
 
         # ── Phase 2 — Per language: skeleton + deltas + upload ───────────────────
         all_manifests: dict[str, dict] = {}
+        failed_scaffolds: list[str] = []
+        failed_blueprints: list[str] = []
 
         for language in active_languages:
             log.info(f"ScaffoldGenerator: Phase 2 start — language={language}")
+            skipped_tiers: set[str] = set()
 
             # Phase 2a — Skeleton per tier
             skeleton_system = llm_client.load_prompt(f"implement_skeleton_{language}")
             tier_skeletons: dict[str, SkeletonOutput] = {}
 
             for tier in active_tiers:
+                checkpoint_key = f"codegen:checkpoint:{challenge_name}:{language}:{tier}"
+                if cache_client.get(checkpoint_key) == "completed":
+                    log.info(f"ScaffoldGenerator: checkpoint hit — skipping tier={tier} lang={language}")
+                    skipped_tiers.add(tier)
+                    continue
+
                 tier_design = design.difficulty_tiers[tier]
                 scenarios_json = json.dumps(tier_design["scenarios"], indent=2)
                 user_context = (
@@ -217,6 +257,8 @@ class ScaffoldGenerator:
             tier_deltas: dict[str, dict[str, FunctionDeltaOutput]] = {}
 
             for tier in active_tiers:
+                if tier in skipped_tiers:
+                    continue
                 skeleton = tier_skeletons[tier]
                 tier_design = design.difficulty_tiers[tier]
                 tier_deltas[tier] = {}
@@ -268,6 +310,8 @@ class ScaffoldGenerator:
 
             # Upload gold masters + scaffold ZIPs
             for tier in active_tiers:
+                if tier in skipped_tiers:
+                    continue
                 skeleton = tier_skeletons[tier]
                 deltas = tier_deltas[tier]
                 tier_design = design.difficulty_tiers[tier]
@@ -276,10 +320,20 @@ class ScaffoldGenerator:
                 safe_gold_master = sanitizer.sanitize_generated_files(gold_master_files)
                 test_hidden = {tag: d.test_hidden for tag, d in deltas.items()}
 
-                storage_client.upload_gold_master_from_dict(
-                    safe_gold_master, test_hidden, manifest,
-                    challenge_name, tier, language,
-                )
+                try:
+                    storage_client.upload_gold_master_from_dict(
+                        safe_gold_master, test_hidden, manifest,
+                        challenge_name, tier, language,
+                    )
+                except Exception as e:
+                    log.error(
+                        f"ScaffoldGenerator: gold master upload failed tier={tier} lang={language}: {e}. "
+                        f"Skipping scaffold ZIPs and blueprints for this tier."
+                    )
+                    failed_scaffolds.extend(
+                        [f"{language}/{s['scenario_tag']}" for s in tier_design["scenarios"]]
+                    )
+                    continue
 
                 safe_skeleton = sanitizer.sanitize_generated_files(skeleton.files)
                 for scenario in tier_design["scenarios"]:
@@ -292,8 +346,16 @@ class ScaffoldGenerator:
                         log.info(f"ScaffoldGenerator: uploaded scaffold → challenges/{s3_key}")
                     except Exception as e:
                         log.error(f"ScaffoldGenerator: scaffold ZIP failed for scenario={tag} lang={language}: {e}")
+                        failed_scaffolds.append(f"{language}/{tag}")
 
-            # Phase 3 — Blueprints
+                try:
+                    checkpoint_key = f"codegen:checkpoint:{challenge_name}:{language}:{tier}"
+                    cache_client.set(checkpoint_key, "completed", expire=60 * 60 * 24)
+                    log.info(f"ScaffoldGenerator: checkpoint written for tier={tier} lang={language}")
+                except Exception as e:
+                    log.warning(f"ScaffoldGenerator: failed to write checkpoint tier={tier} lang={language}: {e}")
+
+            # Phase 3 — Blueprints (language-level, after all tiers)
             if settings.enable_blueprint_generation and settings.enable_llm:
                 try:
                     from services.blueprint import blueprint_service
@@ -303,6 +365,7 @@ class ScaffoldGenerator:
                     log.info(f"ScaffoldGenerator: Dispatched {len(blueprints)} blueprints for lang={language}")
                 except Exception as e:
                     log.error(f"ScaffoldGenerator: Blueprint generation failed for lang={language}: {e}")
+                    failed_blueprints.append(language)
 
             log.info(f"ScaffoldGenerator: Phase 2 complete — language={language}")
 
@@ -329,6 +392,10 @@ class ScaffoldGenerator:
                 "cached_tokens": tok["cached"],
                 "output_tokens": tok["output"],
                 "total_cost_usd": round(llm_client._session_cost, 4),
+            },
+            "warnings": {
+                "failed_scaffolds": failed_scaffolds,
+                "failed_blueprints": failed_blueprints,
             },
         }
     def _build_manifest(

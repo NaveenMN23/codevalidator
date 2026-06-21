@@ -1,22 +1,3 @@
-:root {
-  --bg-primary: #09090b;
-  --bg-secondary: #18181b;
-  --bg-tertiary: #27272a;
-  --border-color: rgba(255, 255, 255, 0.06);
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --accent-color: #3b82f6;
-}
-
-.ide-container {
-  display: flex;
-  height: 100vh;
-  width: 100vw;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  overflow: hidden;
-}
-
 /* Custom Split Gutter */
 .gutter {
   background-color: transparent;
@@ -26,46 +7,26 @@
 }
 
 .gutter:hover {
-  background-color: rgba(59, 130, 246, 0.2);
+  background-color: var(--border-main);
 }
 
 .gutter.gutter-horizontal {
   cursor: col-resize;
   width: 4px !important;
-  border-left: 1px solid var(--border-color);
-  border-right: 1px solid var(--border-color);
+  border-left: 1px solid var(--border-main);
+  border-right: 1px solid var(--border-main);
 }
 
 .gutter.gutter-vertical {
   cursor: row-resize;
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-main);
+  border-bottom: 1px solid var(--border-main);
 }
 
-/* React Split requires the container to have flex direction */
-.flex {
-  display: flex;
-}
-
-/* Ensure vertical split children are contained */
-.split-vertical > div {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.terminal-container {
-  overflow: hidden;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* Scrollbar styling */
+/* Scrollbar styling — workspace panels */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
@@ -73,12 +34,12 @@
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
-  border-radius: 10px;
+  background: var(--border-main);
+  border-radius: 4px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: var(--accent-color);
 }
 
 /* Prose overrides for problem statement */
@@ -88,8 +49,8 @@
 }
 
 .prose pre {
-  background-color: var(--bg-secondary) !important;
-  border: 1px solid var(--border-color);
+  background-color: var(--bg-elevated) !important;
+  border: 1px solid var(--border-main);
   border-radius: 6px;
   padding: 12px !important;
   font-size: 0.7rem;
@@ -97,29 +58,29 @@
 
 .prose code {
   color: var(--accent-color);
-  background-color: rgba(59, 130, 246, 0.1);
+  background-color: var(--bg-elevated);
   padding: 1px 3px;
   border-radius: 3px;
   font-size: 0.9em;
 }
 
 .prose h1, .prose h2, .prose h3 {
-  color: var(--text-primary);
+  color: var(--text-main);
   margin-top: 1.2em;
   margin-bottom: 0.4em;
   font-weight: 600;
 }
 
 .prose p {
-  color: var(--text-secondary);
+  color: var(--text-muted);
   margin-bottom: 0.8em;
 }
 
-/* Terminal custom styles */
+/* Terminal scrollbar */
 .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
+  width: 4px;
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--border-main);
 }

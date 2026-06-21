@@ -46,9 +46,9 @@ function ChallengeCard({ challenge, onClick }: ChallengeCardProps) {
             </h3>
             <div className="flex items-center gap-4 mt-1">
               <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
-                challenge.difficulty === 'BEGINNER' ? 'text-green-600 bg-white border-green-200 dark:bg-background dark:border-green-900/50 dark:text-green-400' :
-                challenge.difficulty === 'INTERMEDIATE' ? 'text-blue-600 bg-white border-blue-200 dark:bg-background dark:border-blue-900/50 dark:text-blue-400' :
-                'text-red-600 bg-white border-red-200 dark:bg-background dark:border-red-900/50 dark:text-red-400'
+                challenge.difficulty === 'BEGINNER' ? 'text-green-600 bg-panel border-green-200 dark:border-green-900/50 dark:text-green-400' :
+                challenge.difficulty === 'INTERMEDIATE' ? 'text-blue-600 bg-panel border-blue-200 dark:border-blue-900/50 dark:text-blue-400' :
+                'text-red-600 bg-panel border-red-200 dark:border-red-900/50 dark:text-red-400'
               }`}>
                 {challenge.difficulty}
               </span>

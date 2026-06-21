@@ -1,5 +1,6 @@
+from typing import Any
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from services.sanitizer import sanitizer
 from services.scaffold_generator import scaffold_generator
 
@@ -11,6 +12,15 @@ class GoldenRepoRequest(BaseModel):
 
     prompt: str
     languages: list[str] = ["node"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def remap_legacy_language(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "language" in data and "languages" not in data:
+            data = dict(data)
+            lang = data.pop("language")
+            data["languages"] = [lang] if isinstance(lang, str) else lang
+        return data
     use_local_few_shots: bool = False
     tiers: list[str] = ["easy", "medium", "hard"]
     scenarios_per_tier: int = 3

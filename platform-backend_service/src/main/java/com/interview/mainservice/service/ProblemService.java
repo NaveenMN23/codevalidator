@@ -27,7 +27,7 @@ public class ProblemService {
     @CircuitBreaker(name = "database")
     @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
     public PageResponse<ProblemSummaryResponse> listProblems(Pageable pageable) {
-        return PageResponse.from(problemRepository.findAll(pageable).map(this::toSummary));
+        return PageResponse.from(problemRepository.findByIsPublishedTrue(pageable).map(this::toSummary));
     }
 
     @CircuitBreaker(name = "database")

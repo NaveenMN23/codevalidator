@@ -10,53 +10,70 @@ export function Navbar() {
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 h-[72px] z-50 bg-background border-b border-border-main px-6 flex items-center justify-between">
-      <div className="flex items-center gap-6">
-        <Link to="/" className="flex items-center gap-2 text-xl font-bold tracking-tight transition-colors">
-          <div className="w-8 h-8 rounded bg-primary flex items-center justify-center">
-            <Code2 size={18} className="text-white" />
+    <nav style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 60,
+      zIndex: 50,
+      background: 'var(--bg-panel)',
+      borderBottom: '1px solid var(--border-main)',
+      padding: '0 24px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+          <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Code2 size={18} color="#fff" />
           </div>
-          <span className="text-text-main">Code<span className="text-primary font-black">Forge</span></span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-main)' }}>
+            Code<span style={{ color: 'var(--accent-color)' }}>Forge</span>
+          </span>
         </Link>
 
         {isAuthenticated && (
-          <div className="flex items-center gap-4 ml-4">
-            <Link to="/" className="text-sm font-medium text-text-muted hover:text-text-main transition-colors">Problems</Link>
-            <Link to="/leaderboard" className="text-sm font-medium text-text-muted hover:text-text-main flex items-center gap-1.5 transition-colors">
-              <Trophy size={14} className="text-yellow-500" /> Leaderboard
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginLeft: 8 }}>
+            <Link to="/" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none' }}>
+              Problems
+            </Link>
+            <Link to="/leaderboard" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Trophy size={14} color="#eab308" /> Leaderboard
             </Link>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-4">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button
           onClick={toggleTheme}
-          className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all"
           title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+          style={{ padding: 8, borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
         >
-          {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
         </button>
 
         {isAuthenticated ? (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/5 dark:bg-white/5 border border-border-main">
-               <UserIcon size={16} className="text-text-muted" />
-               <span className="text-sm font-medium text-text-main">{user?.username || 'User'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, background: 'var(--bg-elevated)', border: '1px solid var(--border-main)' }}>
+              <UserIcon size={14} color="var(--text-muted)" />
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-main)' }}>{user?.username || 'User'}</span>
             </div>
-            <button 
+            <button
               onClick={logout}
-              className="text-sm font-medium text-text-muted hover:text-text-main flex items-center gap-1.5 transition-colors"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              <LogOut size={16} /> Logout
+              <LogOut size={15} /> Logout
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-3">
-            <Link to="/login" className="text-sm font-medium text-text-muted hover:text-text-main px-4 py-2 transition-colors">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Link to="/login" style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none', padding: '6px 14px' }}>
               Log in
             </Link>
-            <Link to="/signup" className="text-sm font-medium bg-primary text-white hover:bg-primary/90 px-4 py-2 rounded-lg transition-colors shadow-lg shadow-primary/20">
+            <Link to="/signup" style={{ fontSize: 13, fontWeight: 500, background: 'var(--accent-color)', color: '#fff', textDecoration: 'none', padding: '6px 14px', borderRadius: 8 }}>
               Sign up
             </Link>
           </div>

@@ -135,6 +135,13 @@ class BlueprintService:
                 )
             source_files = tiers_fetched.get(tier, {})
 
+            if not source_files:
+                log.error(
+                    f"Skipping blueprint for {scenario_tag}: gold master source is empty "
+                    f"(MinIO fetch failed for tier={tier}). A blank blueprint would mislead AI eval."
+                )
+                continue
+
             pid = problem_id or f"{challenge_name}-{scenario_tag}"
             bp = self.generate_for_scenario(
                 pid, challenge_name, language, scenario_tag,

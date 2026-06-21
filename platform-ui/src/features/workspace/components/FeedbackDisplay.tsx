@@ -28,7 +28,7 @@ export function FeedbackDisplay({ result }: FeedbackDisplayProps) {
           Validation Failed
         </h3>
         <p className="text-xs text-text-main mb-3">Your code failed the basic validation tests. Fix the errors below and submit again.</p>
-        <div className="bg-black/20 p-3 rounded font-mono text-[10px] text-red-400 overflow-x-auto whitespace-pre">
+        <div className="bg-bg-elevated p-3 rounded font-mono text-[10px] text-red-400 overflow-x-auto whitespace-pre">
           {logs || 'No error logs available.'}
         </div>
       </div>
@@ -43,7 +43,7 @@ export function FeedbackDisplay({ result }: FeedbackDisplayProps) {
           Validation Successful
         </h3>
         <p className="text-xs text-text-main mb-3">Basic tests passed successfully! Since you are on a free tier, detailed AI evaluation is not available.</p>
-        <div className="bg-black/20 p-3 rounded font-mono text-[10px] text-green-400 overflow-x-auto whitespace-pre">
+        <div className="bg-bg-elevated p-3 rounded font-mono text-[10px] text-green-400 overflow-x-auto whitespace-pre">
           {logs || 'Tests passed successfully.'}
         </div>
       </div>
