@@ -40,8 +40,11 @@ class SkeletonOutput(BaseModel):
     def all_stubs_have_markers(self) -> "SkeletonOutput":
         all_content = "\n".join(self.files.values())
         for tag, stub_loc in self.stub_locations.items():
-            # Level 1: exact marker — the preferred, unambiguous path
+            # Level 1a: exact stub marker (implement scenarios)
             if f"not implemented: {tag}" in all_content:
+                continue
+            # Level 1b: debug scenario marker
+            if f"DEBUG_SCENARIO: {tag}" in all_content:
                 continue
             # Level 2: function present in the declared file with ANY throw/raise body.
             # Accepts skeletons where the LLM used a slightly different stub message;
@@ -73,9 +76,14 @@ class SkeletonOutput(BaseModel):
 
 
 class FunctionDeltaOutput(BaseModel):
-    """Output from Phase 2b function delta call — one function body + its hidden test."""
+    """Output from Phase 2b function delta call — one function body + its hidden test.
+
+    For debug scenarios, `bug_code` holds the broken implementation that goes into the
+    student scaffold (the skeleton already has it, but this field makes it explicit).
+    """
     function_body: str
     test_hidden: str
+    bug_code: str | None = None
 
     @field_validator("function_body")
     @classmethod
@@ -209,17 +217,13 @@ class DesignOutput(BaseModel):
     @field_validator("difficulty_tiers")
     @classmethod
     def has_required_tiers(cls, v: dict) -> dict:
-        for tier in ("easy", "medium", "hard"):
-            if tier not in v:
-                raise ValueError(f"difficulty_tiers missing required key: {tier!r}")
-            tier_data = v[tier]
+        if not v:
+            raise ValueError("difficulty_tiers must not be empty")
+        for tier, tier_data in v.items():
             if "scenarios" not in tier_data:
                 raise ValueError(f"difficulty_tiers[{tier!r}] missing 'scenarios' array")
-            if len(tier_data["scenarios"]) != 3:
-                raise ValueError(
-                    f"difficulty_tiers[{tier!r}].scenarios must have exactly 3 items, "
-                    f"got {len(tier_data['scenarios'])}"
-                )
+            if not tier_data["scenarios"]:
+                raise ValueError(f"difficulty_tiers[{tier!r}].scenarios must not be empty")
             for i, scenario in enumerate(tier_data["scenarios"]):
                 for required in ("scenario_tag", "title", "description"):
                     if required not in scenario:

@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     minio_secret_key: str = "password"
     minio_bucket: str = "challenges"
 
+    # RabbitMQ
+    rabbitmq_host: str = "localhost"
+    rabbitmq_port: int = 5672
+    rabbitmq_user: str = "admin"
+    rabbitmq_password: str = "password"
+    blueprint_queue: str = "blueprint-queue"
+
     # Backend
     backend_url: str = "http://platform-backend:8080"
 

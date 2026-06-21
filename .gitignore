@@ -63,7 +63,12 @@ minio_data/
 challenges/*/dist/
 challenges/**/*.zip
 
+# Local export (generated challenges and gold masters)
+
+
 # Misc
 .vercel
 .netlify
 .turbo
+
+platform-codegen/few_shots

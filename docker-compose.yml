@@ -29,8 +29,9 @@ services:
       /bin/sh -c "
       /usr/bin/mc alias set myminio http://minio:9000 admin password;
       /usr/bin/mc mb myminio/challenges || true;
+      /usr/bin/mc mb myminio/gold-masters || true;
       /usr/bin/mc anonymous set download myminio/challenges;
-      /usr/bin/mc cp /seed_data/*.zip myminio/challenges/node/;
+      /usr/bin/mc cp /seed_data/*.zip myminio/challenges/node/ || true;
       exit 0;
       "
 
@@ -82,7 +83,7 @@ services:
       retries: 5
 
   backend:
-    build: ./platform-backend
+    build: ./platform-backend_service
     container_name: platform_backend
     ports:
       - "8080:8080"
@@ -111,11 +112,24 @@ services:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=admin
       - MINIO_SECRET_KEY=password
+      - REDIS_HOST=redis
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - ENABLE_BLUEPRINT_GENERATION=${ENABLE_BLUEPRINT_GENERATION:-true}
+      - ENABLE_LLM=${ENABLE_LLM:-true}
+      - LOCAL_EXPORT_PATH=/generated
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=password
     volumes:
       - ./challenges:/challenges
+      - ./generated:/generated
     depends_on:
       - backend
       - minio
+      - redis
+      - rabbitmq
 
   ui:
     build: ./platform-ui

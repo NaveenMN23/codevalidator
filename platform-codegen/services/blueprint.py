@@ -1,7 +1,8 @@
 import json
-import requests
 from config.settings import settings
+from infrastructure.cache import cache_client
 from infrastructure.logger import log
+from infrastructure.queue import queue_publisher
 from infrastructure.storage import storage_client
 from services.llm import llm_client, _count_tokens
 
@@ -160,19 +161,33 @@ class BlueprintService:
             return {}
 
     def dispatch(self, blueprint: dict):
-        """Send the generated blueprint to the backend for storage and Redis caching."""
+        """Persist a blueprint via two independent paths.
+
+        1. Redis — written directly from codegen so AI eval always has the data,
+           regardless of backend availability.
+        2. RabbitMQ — durable message for the backend to consume and write to Postgres.
+           If the backend is down, the message waits in the queue until it recovers.
+        """
         if not blueprint:
             return
+
+        problem_id = blueprint.get("problemId", "")
+
+        redis_key = f"blueprint:{problem_id}"
         try:
-            resp = requests.post(
-                f"{settings.backend_url}/api/admin/blueprints",
-                json=blueprint,
-                timeout=10,
-            )
-            resp.raise_for_status()
-            log.info(f"Dispatched blueprint for {blueprint.get('problemId')}")
+            cache_client.set(redis_key, json.dumps(blueprint), expire=60 * 60 * 24 * 365)
+            log.info(f"Blueprint cached in Redis: {redis_key}")
         except Exception as e:
-            log.error(f"Failed to dispatch blueprint for {blueprint.get('problemId')}: {e}")
+            log.error(f"Failed to write blueprint to Redis for {problem_id}: {e}")
+
+        try:
+            queue_publisher.publish(settings.blueprint_queue, blueprint)
+            log.info(f"Blueprint queued for persistence: {problem_id}")
+        except Exception as e:
+            log.warning(
+                f"Failed to queue blueprint for {problem_id} "
+                f"(blueprint is in Redis — AI eval will still work): {e}"
+            )
 
 
 blueprint_service = BlueprintService()
