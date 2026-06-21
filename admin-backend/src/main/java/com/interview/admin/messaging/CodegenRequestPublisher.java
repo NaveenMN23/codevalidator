@@ -29,6 +29,7 @@ public class CodegenRequestPublisher {
             job.getLanguages(),
             job.getTiers(),
             job.getScenariosPerTier(),
+            job.getDebugScenariosPerTier(),
             null,
             job.getDesignFeedback()
         );
@@ -44,6 +45,7 @@ public class CodegenRequestPublisher {
             job.getLanguages(),
             job.getTiers(),
             job.getScenariosPerTier(),
+            job.getDebugScenariosPerTier(),
             job.getDesignJson(),
             null
         );

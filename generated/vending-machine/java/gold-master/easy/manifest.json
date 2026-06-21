@@ -1,0 +1,12 @@
+{
+  "challenge": "vending-machine",
+  "language": "java",
+  "scenarios": {
+    "easy-dispense-product-bug": {
+      "title": "Vending Machine: Product Dispense Bug",
+      "description": "The dispenseProduct() function runs without error, but the product quantity is not decremented after a successful transaction. Find and fix the bug.",
+      "tier": "easy",
+      "type": "debug"
+    }
+  }
+}

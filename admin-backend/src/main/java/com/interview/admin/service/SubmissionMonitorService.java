@@ -48,7 +48,7 @@ public class SubmissionMonitorService {
             var info = rabbitAdmin.getQueueInfo(queueName);
             return info != null ? info.getMessageCount() : 0;
         } catch (Exception e) {
-            return -1;
+            return 0;
         }
     }
 }

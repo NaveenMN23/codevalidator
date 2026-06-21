@@ -1,20 +1,20 @@
 import { useQuery } from '@tanstack/react-query'
 import { listSubmissions, getQueueDepth } from '../lib/api'
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Activity } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Activity, RefreshCw, AlertCircle } from 'lucide-react'
 
 type Submission = { id: string; userId: string; problemId: string; submissionLink: string; score?: number | null; submittedAt: string }
 
 export default function MonitoringPage() {
   const [page, setPage] = useState(0)
 
-  const { data } = useQuery({
+  const { data, isError: subsError, refetch: refetchSubs, isFetching: subsFetching } = useQuery({
     queryKey: ['submissions', page],
     queryFn: () => listSubmissions(page),
     refetchInterval: 30_000,
   })
 
-  const { data: queueData } = useQuery({
+  const { data: queueData, isError: queueError } = useQuery({
     queryKey: ['queue-depth'],
     queryFn: getQueueDepth,
     refetchInterval: 30_000,
@@ -23,7 +23,11 @@ export default function MonitoringPage() {
   const submissions: Submission[] = data?.content || []
   const totalPages: number = data?.totalPages || 1
   const totalElements: number = data?.totalElements || 0
-  const queueDepth: number = queueData?.depth ?? 0
+  const rawDepth: number = queueData?.depth ?? 0
+  const queueDepth = Math.max(0, rawDepth)
+  const queueUnavailable = queueError || rawDepth < 0
+  const blueprintQueue: number = Math.max(0, queueData?.['blueprint-queue'] ?? 0)
+  const codegenQueue: number = Math.max(0, queueData?.['codegen-request-queue'] ?? 0)
 
   const gradedCount = submissions.filter((s) => s.score != null).length
   const pendingCount = submissions.filter((s) => s.score == null).length
@@ -33,24 +37,45 @@ export default function MonitoringPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, margin: '0 0 4px', color: 'var(--text-primary)' }}>Monitoring</h1>
-          <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 14 }}>Live submission queue · refreshes every 30s</p>
+          <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 14 }}>Live submission queue · Platform health · refreshes every 30s</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 10 }}>
-          <Activity size={14} color={queueDepth > 0 ? '#2563eb' : 'var(--text-secondary)'} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{queueDepth}</span>
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>in grading queue</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => refetchSubs()}
+            disabled={subsFetching}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-surface)', cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', opacity: subsFetching ? 0.6 : 1 }}
+          >
+            <RefreshCw size={13} style={{ animation: subsFetching ? 'spin 1s linear infinite' : undefined }} /> Refresh
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 10 }}>
+            <Activity size={14} color={queueUnavailable ? 'var(--text-secondary)' : queueDepth > 0 ? '#2563eb' : 'var(--text-secondary)'} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+              {queueUnavailable ? 'N/A' : queueDepth}
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>in grading queue</span>
+          </div>
         </div>
       </div>
 
+      {/* API error banner */}
+      {subsError && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, marginBottom: 20 }}>
+          <AlertCircle size={16} color="#dc2626" />
+          <span style={{ fontSize: 13, color: '#b91c1c' }}>Could not connect to submissions API. The admin-backend service may be down.</span>
+        </div>
+      )}
+
       {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 24 }}>
         {[
           { label: 'Total', value: totalElements, color: 'var(--text-primary)' },
           { label: 'Graded', value: gradedCount, color: '#059669' },
           { label: 'Pending', value: pendingCount, color: '#d97706' },
-          { label: 'Queue Depth', value: queueDepth, color: '#2563eb' },
+          { label: 'Grading Queue', value: queueUnavailable ? 'N/A' : queueDepth, color: '#2563eb' },
+          { label: 'Blueprints', value: blueprintQueue, color: blueprintQueue > 0 ? '#7c3aed' : 'var(--text-secondary)', title: 'Challenge blueprints being preprocessed by platform workers' },
+          { label: 'Generation', value: codegenQueue, color: codegenQueue > 0 ? '#0891b2' : 'var(--text-secondary)', title: 'Active codegen requests in queue' },
         ].map((stat) => (
-          <div key={stat.label} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 10, padding: '14px 16px' }}>
+          <div key={stat.label} title={'title' in stat ? stat.title : undefined} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 10, padding: '14px 16px', cursor: 'title' in stat ? 'help' : undefined }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: stat.color, marginBottom: 2 }}>{stat.value}</div>
             <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>{stat.label}</div>
           </div>
@@ -91,8 +116,13 @@ export default function MonitoringPage() {
                 </tr>
               )
             })}
-            {submissions.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>No submissions yet</td></tr>
+            {submissions.length === 0 && !subsError && (
+              <tr>
+                <td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <div style={{ marginBottom: 6, fontWeight: 500 }}>No submissions yet</div>
+                  <div style={{ fontSize: 12 }}>This table will populate as candidates start submitting solutions.</div>
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

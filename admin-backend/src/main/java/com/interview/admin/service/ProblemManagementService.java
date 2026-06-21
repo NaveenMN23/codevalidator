@@ -93,7 +93,9 @@ public class ProblemManagementService {
         List<String> tags = buildTags(domain, job.getLanguages());
         String problemLink = "/challenges/" + slug;
 
-        Problem problem = Problem.create(slug, title, description, "MIXED", problemLink, tags);
+        List<String> tiers = job.getTiers();
+        String difficulty = (tiers != null && tiers.size() == 1) ? tiers.get(0).toUpperCase() : "MIXED";
+        Problem problem = Problem.create(slug, title, description, difficulty, problemLink, tags);
         return problemRepository.save(problem);
     }
 

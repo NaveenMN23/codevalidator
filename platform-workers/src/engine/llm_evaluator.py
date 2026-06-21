@@ -112,7 +112,7 @@ CONSTRAINTS: {blueprint.get('task', {}).get('constraints', [])}
 EXPECTED COMPLEXITY: {blueprint.get('task', {}).get('expectedComplexity', {})}
 SCOPE: {blueprint.get('scope', {})}
 EXPECTED APPROACHES: {blueprint.get('expectedApproaches', [])}
-INTERVIEWER FOCUS: {blueprint.get('interviewerFocusArea', 'N/A')}
+INTERVIEWER FOCUS: {blueprint.get('interviewFocusArea') or blueprint.get('interviewerFocusArea', 'N/A')}
 
 You must provide feedback in three layers:
 1. Correctness Finding

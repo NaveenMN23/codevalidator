@@ -1,21 +1,38 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { previewDesign, refineDesign, approveGeneration, cancelJob, getJobStatus, getGenerationHistory } from '../lib/api'
+import { previewDesign, refineDesign, approveGeneration, cancelJob, retryJob, getJobStatus, getGenerationHistory } from '../lib/api'
 import { useAdminStore } from '../store'
 import { StatusBadge } from '../components/StatusBadge'
-import { CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Loader2, XCircle, ArrowRight, X } from 'lucide-react'
+import { CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Loader2, XCircle, ArrowRight, X, AlertTriangle, RotateCcw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 const LABEL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 8, display: 'block' }
 const INPUT: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }
-const BTN = (variant: 'primary' | 'secondary' | 'ghost' | 'danger'): React.CSSProperties => ({
+const BTN = (variant: 'primary' | 'secondary' | 'ghost' | 'danger' | 'amber'): React.CSSProperties => ({
   padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
-  background: variant === 'primary' ? '#000' : variant === 'danger' ? '#fee2e2' : variant === 'secondary' ? 'var(--bg-elevated)' : 'transparent',
-  color: variant === 'primary' ? '#fff' : variant === 'danger' ? '#b91c1c' : 'var(--text-primary)',
-  border: variant !== 'primary' && variant !== 'ghost' ? '1px solid var(--border-color)' : 'none',
+  background: variant === 'primary' ? '#000' : variant === 'danger' ? '#fee2e2' : variant === 'amber' ? '#fffbeb' : variant === 'secondary' ? 'var(--bg-elevated)' : 'transparent',
+  color: variant === 'primary' ? '#fff' : variant === 'danger' ? '#b91c1c' : variant === 'amber' ? '#92400e' : 'var(--text-primary)',
+  border: variant !== 'primary' && variant !== 'ghost' ? `1px solid ${variant === 'danger' ? '#fca5a5' : variant === 'amber' ? '#fcd34d' : 'var(--border-color)'}` : 'none',
 } as React.CSSProperties)
 
-type Job = { id: string; status: string; prompt: string; languages: string[]; tiers: string[]; designJson?: string; resultJson?: string; error?: string; problemId?: string; createdAt: string }
+type Job = {
+  id: string; status: string; prompt: string; languages: string[]; tiers: string[]
+  scenariosPerTier: number; debugScenariosPerTier: number
+  designJson?: string; resultJson?: string; error?: string; problemId?: string
+  createdAt: string; updatedAt: string
+}
+
+function elapsedMs(updatedAt: string): number {
+  return Date.now() - new Date(updatedAt).getTime()
+}
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`
+}
 
 function ScenarioCard({ scenario, tag }: { scenario: Record<string, unknown>; tag: string }) {
   return (
@@ -163,10 +180,10 @@ export default function GenerationPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { activeJobId, setActiveJobId } = useAdminStore()
-  const [form, setForm] = useState({ prompt: '', languages: ['node'], tiers: ['easy', 'medium', 'hard'], scenariosPerTier: 3 })
+  const [form, setForm] = useState({ prompt: '', languages: ['node'], tiers: ['easy', 'medium', 'hard'], implementScenariosPerTier: 2, debugScenariosPerTier: 1 })
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new')
+  const [now, setNow] = useState(() => Date.now())
 
-  // Single query drives the entire current-job state — persists across navigation
   const { data: currentJob } = useQuery<Job>({
     queryKey: ['active-job', activeJobId],
     queryFn: () => getJobStatus(activeJobId!),
@@ -177,12 +194,19 @@ export default function GenerationPage() {
     },
   })
 
-  // Invalidate history when job reaches terminal state
   useEffect(() => {
     if (currentJob?.status === 'COMPLETED' || currentJob?.status === 'FAILED' || currentJob?.status === 'CANCELLED') {
       qc.invalidateQueries({ queryKey: ['history'] })
     }
   }, [currentJob?.status, qc])
+
+  // Tick every second while a job is in-flight so elapsed time updates live
+  useEffect(() => {
+    const s = currentJob?.status
+    if (s !== 'DESIGNING' && s !== 'GENERATING') return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [currentJob?.status])
 
   const { data: history = [] } = useQuery<Job[]>({
     queryKey: ['history'],
@@ -191,7 +215,13 @@ export default function GenerationPage() {
   })
 
   const previewMutation = useMutation({
-    mutationFn: () => previewDesign(form),
+    mutationFn: () => previewDesign({
+      prompt: form.prompt,
+      languages: form.languages,
+      tiers: form.tiers,
+      scenariosPerTier: form.implementScenariosPerTier + form.debugScenariosPerTier,
+      debugScenariosPerTier: form.debugScenariosPerTier,
+    }),
     onSuccess: (job) => setActiveJobId(job.id),
   })
 
@@ -220,6 +250,15 @@ export default function GenerationPage() {
     },
   })
 
+  const retryMutation = useMutation({
+    mutationFn: (jobId: string) => retryJob(jobId),
+    onSuccess: (_, jobId) => {
+      setActiveJobId(jobId)
+      setActiveTab('new')
+      qc.invalidateQueries({ queryKey: ['active-job', jobId] })
+    },
+  })
+
   const handleNewJob = () => {
     setActiveJobId(null)
     qc.removeQueries({ queryKey: ['active-job'] })
@@ -243,6 +282,16 @@ export default function GenerationPage() {
   const isFailed = status === 'FAILED'
   const isCancelled = status === 'CANCELLED'
   const hasActiveJob = !!activeJobId
+
+  // Elapsed time driven by `now` which ticks every second (see useEffect above)
+  const elapsed = currentJob?.updatedAt ? now - new Date(currentJob.updatedAt).getTime() : 0
+  const isDesigningStuck = isDesigning && elapsed > 2 * 60 * 1000
+  const isGeneratingStuck = isGenerating && elapsed > 10 * 60 * 1000
+
+  const isHistoryStuck = (job: Job) => {
+    const e = job.updatedAt ? elapsedMs(job.updatedAt) : 0
+    return (job.status === 'DESIGNING' && e > 2 * 60 * 1000) || (job.status === 'GENERATING' && e > 10 * 60 * 1000)
+  }
 
   return (
     <div style={{ maxWidth: 820 }}>
@@ -300,9 +349,23 @@ export default function GenerationPage() {
                 </div>
                 <div>
                   <span style={LABEL}>Scenarios per tier</span>
-                  <select value={form.scenariosPerTier} onChange={(e) => setForm({ ...form, scenariosPerTier: Number(e.target.value) })} style={{ ...INPUT, width: '100%' }}>
-                    {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Feature (implement)</label>
+                      <select value={form.implementScenariosPerTier} onChange={(e) => setForm({ ...form, implementScenariosPerTier: Number(e.target.value) })} style={{ ...INPUT, width: '100%' }}>
+                        {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Bug (debug)</label>
+                      <select value={form.debugScenariosPerTier} onChange={(e) => setForm({ ...form, debugScenariosPerTier: Number(e.target.value) })} style={{ ...INPUT, width: '100%' }}>
+                        {[0, 1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--text-secondary)' }}>
+                      Total: {form.implementScenariosPerTier + form.debugScenariosPerTier} per tier
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -316,20 +379,37 @@ export default function GenerationPage() {
             </div>
           )}
 
-          {/* Designing — waiting for codegen to produce the design */}
-          {isDesigning && (
-            <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 16, padding: 24, background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 10 }}>
-              <Loader2 size={22} color="var(--accent-color)" style={{ flexShrink: 0 }} />
-              <div>
-                <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>Generating design…</p>
-                <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
-                  Prompt: <em>{currentJob?.prompt}</em>. Usually ~30s. Page auto-refreshes every 10s.
-                </p>
+          {/* Designing */}
+          {isDesigning && currentJob && (
+            <div style={{ marginTop: 24, padding: 24, background: 'var(--bg-surface)', border: `1px solid ${isDesigningStuck ? '#fcd34d' : 'var(--border-color)'}`, borderRadius: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: isDesigningStuck ? 16 : 0 }}>
+                <Loader2 size={22} color="var(--accent-color)" style={{ flexShrink: 0 }} className="spin" />
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>Generating design…</p>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+                    <em>{currentJob.prompt}</em> · elapsed: {formatElapsed(elapsed)}
+                  </p>
+                </div>
               </div>
+              {isDesigningStuck && (
+                <div style={{ padding: '12px 14px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={15} color="#92400e" />
+                    <span style={{ fontSize: 13, color: '#92400e' }}>Taking longer than usual — codegen may be stuck or restarting.</span>
+                  </div>
+                  <button
+                    onClick={() => retryMutation.mutate(currentJob.id)}
+                    disabled={retryMutation.isPending}
+                    style={{ ...BTN('amber'), display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, whiteSpace: 'nowrap', opacity: retryMutation.isPending ? 0.7 : 1 }}
+                  >
+                    {retryMutation.isPending ? <Loader2 size={12} /> : <RotateCcw size={12} />} Force Retry
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Design ready — review & refine */}
+          {/* Design ready */}
           {canShowDesign && currentJob && (
             <DesignReview
               job={currentJob}
@@ -343,17 +423,32 @@ export default function GenerationPage() {
           )}
 
           {/* Generating full challenge */}
-          {isGenerating && (
-            <div style={{ marginTop: 24, padding: 24, background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 10 }}>
+          {isGenerating && currentJob && (
+            <div style={{ marginTop: 24, padding: 24, background: 'var(--bg-surface)', border: `1px solid ${isGeneratingStuck ? '#fcd34d' : 'var(--border-color)'}`, borderRadius: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-                <Loader2 size={22} color="var(--accent-color)" style={{ flexShrink: 0 }} />
-                <div>
+                <Loader2 size={22} color="var(--accent-color)" style={{ flexShrink: 0 }} className="spin" />
+                <div style={{ flex: 1 }}>
                   <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>Full generation in progress</p>
                   <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
-                    Building skeletons, tests, and blueprints for <em>{currentJob?.prompt}</em>. Takes 5–10 min. You can navigate away — this auto-refreshes.
+                    Building skeletons, tests, and blueprints for <em>{currentJob.prompt}</em> · elapsed: {formatElapsed(elapsed)}
                   </p>
                 </div>
               </div>
+              {isGeneratingStuck && (
+                <div style={{ padding: '12px 14px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={15} color="#92400e" />
+                    <span style={{ fontSize: 13, color: '#92400e' }}>Taking longer than expected — codegen may be stuck or have crashed.</span>
+                  </div>
+                  <button
+                    onClick={() => retryMutation.mutate(currentJob.id)}
+                    disabled={retryMutation.isPending}
+                    style={{ ...BTN('amber'), display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, whiteSpace: 'nowrap', opacity: retryMutation.isPending ? 0.7 : 1 }}
+                  >
+                    {retryMutation.isPending ? <Loader2 size={12} /> : <RotateCcw size={12} />} Force Retry
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => cancelMutation.mutate()}
                 disabled={cancelMutation.isPending}
@@ -401,16 +496,28 @@ export default function GenerationPage() {
           )}
 
           {/* Failed */}
-          {isFailed && (
+          {isFailed && currentJob && (
             <div style={{ marginTop: 24, padding: 24, background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                 <XCircle size={20} color="#dc2626" />
                 <span style={{ fontWeight: 700, color: '#dc2626', fontSize: 15 }}>Generation failed</span>
               </div>
-              {currentJob?.error && (
-                <p style={{ margin: '0 0 12px', fontSize: 12, color: '#b91c1c', fontFamily: 'monospace' }}>{currentJob.error}</p>
+              {currentJob.error && (
+                <pre style={{ margin: '0 0 16px', fontSize: 12, color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: '#fff1f1', borderRadius: 6, padding: '10px 12px' }}>
+                  {currentJob.error}
+                </pre>
               )}
-              <button onClick={handleNewJob} style={{ ...BTN('secondary'), fontSize: 13 }}>Try again</button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => retryMutation.mutate(currentJob.id)}
+                  disabled={retryMutation.isPending}
+                  style={{ ...BTN('secondary'), display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, opacity: retryMutation.isPending ? 0.7 : 1 }}
+                >
+                  {retryMutation.isPending ? <Loader2 size={14} /> : <RotateCcw size={14} />}
+                  Retry (same job)
+                </button>
+                <button onClick={handleNewJob} style={{ ...BTN('ghost'), fontSize: 13, border: '1px solid var(--border-color)' }}>Start fresh</button>
+              </div>
             </div>
           )}
         </>
@@ -436,22 +543,34 @@ export default function GenerationPage() {
                   <td style={{ padding: '12px 16px' }}><StatusBadge status={job.status} /></td>
                   <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-secondary)' }}>{new Date(job.createdAt).toLocaleDateString()}</td>
                   <td style={{ padding: '12px 16px' }}>
-                    {job.status === 'AWAITING_APPROVAL' && (
-                      <button
-                        onClick={() => handleResumeJob(job)}
-                        style={{ ...BTN('primary'), fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
-                      >
-                        Review <ArrowRight size={12} />
-                      </button>
-                    )}
-                    {job.status === 'GENERATING' && (
-                      <button
-                        onClick={() => handleResumeJob(job)}
-                        style={{ ...BTN('secondary'), fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
-                      >
-                        <Loader2 size={11} /> Monitor
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {job.status === 'AWAITING_APPROVAL' && (
+                        <button
+                          onClick={() => handleResumeJob(job)}
+                          style={{ ...BTN('primary'), fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                        >
+                          Review <ArrowRight size={12} />
+                        </button>
+                      )}
+                      {job.status === 'GENERATING' && (
+                        <button
+                          onClick={() => handleResumeJob(job)}
+                          style={{ ...BTN('secondary'), fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                        >
+                          <Loader2 size={11} /> Monitor
+                        </button>
+                      )}
+                      {(job.status === 'FAILED' || isHistoryStuck(job)) && (
+                        <button
+                          onClick={() => retryMutation.mutate(job.id)}
+                          disabled={retryMutation.isPending}
+                          style={{ ...BTN('secondary'), fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4, opacity: retryMutation.isPending ? 0.6 : 1 }}
+                          title={isHistoryStuck(job) ? 'Job appears stuck — click to retry' : 'Re-run this job'}
+                        >
+                          <RotateCcw size={11} /> Retry
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

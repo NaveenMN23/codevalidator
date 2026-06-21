@@ -77,7 +77,7 @@ Return a single JSON object with exactly these keys:
       }
     }
   },
-  "interviewerFocusArea": "2-3 sentences describing what the interviewer should probe first, which trade-offs to surface, and what distinguishes a senior answer from a junior one in a live session for THIS specific scenario.",
+  "interviewFocusArea": "2-3 sentences describing what the interviewer should probe first, which trade-offs to surface, and what distinguishes a senior answer from a junior one in a live session for THIS specific scenario.",
   "followUpContext": "2-4 sentences describing the key design decisions, trade-offs, and edge cases an interviewer would probe in a follow-up discussion for THIS specific scenario. What separates a junior from a senior answer here?"
 }
 ```
@@ -93,6 +93,6 @@ Return a single JSON object with exactly these keys:
 - `evaluation.senioritySignals` must be concrete, checkable observations (not generic praise). List 3-5 specific things a correct solution does that a mediocre one misses.
 - `evaluation.commonMistakes` must be real pitfalls observed in actual interviews at this seniority level — things students get wrong most often
 - `evaluation.rubric` anchors scores to observable behaviors so evaluation is consistent across students
-- `interviewerFocusArea` must name the specific trade-off or edge case to probe — not generic ("explain your design") but scenario-concrete ("ask why they chose X over Y here")
+- `interviewFocusArea` must name the specific trade-off or edge case to probe — not generic ("explain your design") but scenario-concrete ("ask why they chose X over Y here")
 - `followUpContext` must be specific to this scenario's implementation challenge (not generic "explain your design choices")
 - Output JSON only. No markdown fences, no explanation text.

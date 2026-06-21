@@ -45,7 +45,8 @@ public class GenerationService {
     @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
     public GenerationJobResponse previewDesign(GenerationPreviewRequest request) {
         GenerationJob job = GenerationJob.create(
-            request.prompt(), request.languages(), request.tiers(), request.scenariosPerTier()
+            request.prompt(), request.languages(), request.tiers(),
+            request.scenariosPerTier(), request.debugScenariosPerTier()
         );
         jobRepository.save(job);
         publisher.publishDesignPreview(job);
@@ -97,6 +98,33 @@ public class GenerationService {
 
         job.setStatus(GenerationJobStatus.CANCELLED);
         jobRepository.save(job);
+        return GenerationJobResponse.from(job);
+    }
+
+    @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
+    public GenerationJobResponse retryJob(UUID jobId) {
+        GenerationJob job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found"));
+
+        if (job.getStatus() == GenerationJobStatus.COMPLETED || job.getStatus() == GenerationJobStatus.CANCELLED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot retry a job in terminal state: " + job.getStatus());
+        }
+
+        job.setError(null);
+        if (job.getDesignJson() == null) {
+            // Never reached design phase — re-run from the start
+            job.setStatus(GenerationJobStatus.DESIGNING);
+            jobRepository.save(job);
+            publisher.publishDesignPreview(job);
+        } else {
+            // Design exists, re-run full generation
+            job.setResultJson(null);
+            job.setProblemId(null);
+            job.setStatus(GenerationJobStatus.GENERATING);
+            jobRepository.save(job);
+            publisher.publishFullGenerate(job);
+        }
         return GenerationJobResponse.from(job);
     }
 

@@ -70,7 +70,12 @@ export default function UsersPage() {
               </tr>
             ))}
             {users.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>No users found</td></tr>
+              <tr>
+                <td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <div style={{ marginBottom: 6, fontWeight: 500 }}>No candidates yet</div>
+                  <div style={{ fontSize: 12 }}>Users will appear here once they register on the platform.</div>
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

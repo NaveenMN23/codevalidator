@@ -37,6 +37,8 @@ export const approveGeneration = (jobId: string) =>
   api.post(`/generation/${jobId}/approve`).then((r) => r.data)
 export const cancelJob = (jobId: string) =>
   api.post(`/generation/${jobId}/cancel`).then((r) => r.data)
+export const retryJob = (jobId: string) =>
+  api.post(`/generation/${jobId}/retry`).then((r) => r.data)
 export const getJobStatus = (jobId: string) =>
   api.get(`/generation/${jobId}/status`).then((r) => r.data)
 export const getGenerationHistory = () =>
