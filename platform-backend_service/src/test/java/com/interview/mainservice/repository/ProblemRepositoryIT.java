@@ -34,7 +34,7 @@ class ProblemRepositoryIT {
     @Test
     void persistsAndReadsBackAProblemWithTags() {
         Problem problem = Problem.create("two-sum", "Two Sum", "Find two numbers that sum to a target.",
-                Difficulty.EASY, "challenges/two-sum/boilerplate.zip", List.of("arrays", "hash-map"));
+                Difficulty.EASY, "challenges/two-sum/boilerplate.zip", List.of("arrays", "hash-map"), "easy");
 
         problemRepository.save(problem);
 
