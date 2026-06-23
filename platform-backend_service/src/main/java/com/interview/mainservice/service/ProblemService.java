@@ -6,7 +6,15 @@ import com.interview.mainservice.dto.ProblemSummaryResponse;
 import com.interview.mainservice.model.Problem;
 import com.interview.mainservice.repository.ProblemRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.minio.GetObjectArgs;
+import io.minio.MinioClient;
+import java.io.InputStream;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -19,9 +27,14 @@ import org.springframework.web.server.ResponseStatusException;
 public class ProblemService {
 
     private final ProblemRepository problemRepository;
+    private final MinioClient minioClient;
 
-    public ProblemService(ProblemRepository problemRepository) {
+    @Value("${app.minio.challenges-bucket:challenges}")
+    private String challengesBucket;
+
+    public ProblemService(ProblemRepository problemRepository, MinioClient minioClient) {
         this.problemRepository = problemRepository;
+        this.minioClient = minioClient;
     }
 
     @CircuitBreaker(name = "database")
@@ -40,11 +53,41 @@ public class ProblemService {
 
     private ProblemSummaryResponse toSummary(Problem problem) {
         return new ProblemSummaryResponse(problem.getId(), problem.getSlug(), problem.getTitle(),
-                problem.getDifficulty(), problem.getTags());
+                problem.getDifficulty(), problem.getLanguage(), problem.getTags());
     }
 
     private ProblemDetailResponse toDetail(Problem problem) {
+        Map<String, String> files = fetchChallengeFiles(problem);
         return new ProblemDetailResponse(problem.getId(), problem.getSlug(), problem.getTitle(),
-                problem.getDescription(), problem.getDifficulty(), problem.getProblemLink(), problem.getTags());
+                problem.getDescription(), problem.getDifficulty(), problem.getLanguage(), files,
+                problem.getProblemLink(), problem.getTags());
+    }
+
+    private Map<String, String> fetchChallengeFiles(Problem problem) {
+        String language = problem.getLanguage();
+        if (language == null || problem.getSlug() == null) {
+            return Map.of();
+        }
+
+        // Slug already encodes the full path: {challenge}-{scenario_key}
+        // e.g. "vending-machine-system-easy-restock-product"
+        // Codegen stores ZIPs as: {language}/{challenge}-{scenario_key}.zip
+        String s3Key = language + "/" + problem.getSlug() + ".zip";
+
+        Map<String, String> files = new LinkedHashMap<>();
+        try (InputStream stream = minioClient.getObject(
+                GetObjectArgs.builder().bucket(challengesBucket).object(s3Key).build());
+             ZipInputStream zip = new ZipInputStream(stream)) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (!entry.isDirectory()) {
+                    files.put(entry.getName(), new String(zip.readAllBytes()));
+                }
+            }
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Challenge files not available — failed to read from storage: " + e.getMessage());
+        }
+        return files;
     }
 }

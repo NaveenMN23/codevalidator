@@ -8,6 +8,7 @@ import com.interview.admin.messaging.CodegenRequestPublisher;
 import com.interview.admin.model.GenerationJob;
 import com.interview.admin.model.GenerationJobStatus;
 import com.interview.admin.model.Problem;
+import java.util.List;
 import com.interview.admin.repository.GenerationJobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +46,8 @@ public class GenerationService {
     @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
     public GenerationJobResponse previewDesign(GenerationPreviewRequest request) {
         GenerationJob job = GenerationJob.create(
-            request.prompt(), request.languages(), request.tiers(), request.scenariosPerTier()
+            request.prompt(), request.languages(), request.tiers(),
+            request.scenariosPerTier(), request.debugScenariosPerTier()
         );
         jobRepository.save(job);
         publisher.publishDesignPreview(job);
@@ -101,6 +103,33 @@ public class GenerationService {
     }
 
     @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
+    public GenerationJobResponse retryJob(UUID jobId) {
+        GenerationJob job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found"));
+
+        if (job.getStatus() == GenerationJobStatus.COMPLETED || job.getStatus() == GenerationJobStatus.CANCELLED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot retry a job in terminal state: " + job.getStatus());
+        }
+
+        job.setError(null);
+        if (job.getDesignJson() == null) {
+            // Never reached design phase — re-run from the start
+            job.setStatus(GenerationJobStatus.DESIGNING);
+            jobRepository.save(job);
+            publisher.publishDesignPreview(job);
+        } else {
+            // Design exists, re-run full generation
+            job.setResultJson(null);
+            job.setProblemId(null);
+            job.setStatus(GenerationJobStatus.GENERATING);
+            jobRepository.save(job);
+            publisher.publishFullGenerate(job);
+        }
+        return GenerationJobResponse.from(job);
+    }
+
+    @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
     public GenerationJobResponse getStatus(UUID jobId) {
         return jobRepository.findById(jobId)
                 .map(GenerationJobResponse::from)
@@ -142,9 +171,11 @@ public class GenerationService {
                     job.setStatus(GenerationJobStatus.COMPLETED);
                     jobRepository.save(job);
                     try {
-                        Problem problem = problemService.createFromJob(job);
-                        job.setProblemId(problem.getId());
-                        log.info("Created problem {} from generation job {}", problem.getId(), jobId);
+                        List<Problem> problems = problemService.createFromJob(job);
+                        if (!problems.isEmpty()) {
+                            job.setProblemId(problems.get(0).getId());
+                            log.info("Created {} problems from generation job {}", problems.size(), jobId);
+                        }
                     } catch (Exception e) {
                         log.error("Failed to create problem from job {}: {}", jobId, e.getMessage(), e);
                     }

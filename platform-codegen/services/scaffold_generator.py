@@ -117,6 +117,7 @@ class ScaffoldGenerator:
         languages: list[str] | None = None,
         tiers: list[str] | None = None,
         scenarios_per_tier: int = 3,
+        debug_scenarios_per_tier: int = 1,
         feedback: str | None = None,
     ) -> dict:
         """Run Phase 1 only — returns the DesignOutput as a dict for admin review."""
@@ -131,6 +132,7 @@ class ScaffoldGenerator:
             f"<languages>{','.join(active_languages)}</languages>\n"
             f"<tiers>{','.join(active_tiers)}</tiers>\n"
             f"<scenarios_per_tier>{scenarios_per_tier}</scenarios_per_tier>\n"
+            f"<debug_scenarios_per_tier>{debug_scenarios_per_tier}</debug_scenarios_per_tier>\n"
             f"<problem>\n{clean_description}\n</problem>"
             f"{feedback_block}"
         )
@@ -149,6 +151,7 @@ class ScaffoldGenerator:
         use_local_few_shots: bool = False,
         tiers: list[str] | None = None,
         scenarios_per_tier: int = 3,
+        debug_scenarios_per_tier: int = 1,
         design_json: str | dict | None = None,
     ) -> dict:
         active_languages: list[str] = languages or ["node"]
@@ -173,11 +176,12 @@ class ScaffoldGenerator:
             log.info(f"ScaffoldGenerator: Phase 1 skipped — using pre-approved design")
         else:
             design_system = llm_client.load_prompt("design_challenge")
-            log.info(f"ScaffoldGenerator: Phase 1 (design, tiers={active_tiers}, scenarios_per_tier={scenarios_per_tier})")
+            log.info(f"ScaffoldGenerator: Phase 1 (design, tiers={active_tiers}, scenarios_per_tier={scenarios_per_tier}, debug_scenarios_per_tier={debug_scenarios_per_tier})")
             design_user_msg = (
                 f"<languages>{','.join(active_languages)}</languages>\n"
                 f"<tiers>{','.join(active_tiers)}</tiers>\n"
                 f"<scenarios_per_tier>{scenarios_per_tier}</scenarios_per_tier>\n"
+                f"<debug_scenarios_per_tier>{debug_scenarios_per_tier}</debug_scenarios_per_tier>\n"
                 f"<problem>\n{clean_description}\n</problem>"
             )
             raw_design = llm_client.complete_json(design_system, design_user_msg, label="design")

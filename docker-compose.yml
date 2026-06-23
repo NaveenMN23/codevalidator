@@ -96,6 +96,10 @@ services:
       SPRING_RABBITMQ_USERNAME: admin
       SPRING_RABBITMQ_PASSWORD: password
       EXECUTION_SERVICE_URL: http://execution-service:8001
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: password
+      SECURITY_AUTH_ENABLED: "false"
     depends_on:
       postgres:
         condition: service_healthy

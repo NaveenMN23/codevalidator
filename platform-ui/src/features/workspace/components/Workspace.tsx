@@ -1,25 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
-import JSZip from 'jszip';
 import Split from 'react-split';
 import ReactMarkdown from 'react-markdown';
 import { TerminalComponent } from './Terminal';
 import { FileExplorer } from './FileExplorer';
 import { FeedbackDisplay } from './FeedbackDisplay';
-import { getWebContainer, runCommand } from '../../../lib/webcontainer';
+import { getWebContainer } from '../../../lib/webcontainer';
 import { 
   Play, Send, RefreshCcw, LayoutGrid, BookOpen, 
-  ArrowLeft, ChevronUp, ChevronDown, CircleDot, Terminal as TerminalIcon,
+  ArrowLeft, ChevronUp, ChevronDown, Terminal as TerminalIcon,
   RotateCcw, Sparkles
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
 import type { FileSystemTree } from '@webcontainer/api';
-import { fetchChallenge, fetchDraft, saveDraft, submitChallenge, deleteDraft, fetchSubmission } from '../api';
+import { fetchChallenge, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge } from '../api';
 import type { GradingResult } from '../workspace.types';
 import './Workspace.css';
-
-const MINIO_BASE = ''; // Proxied through Nginx /challenges/ → MinIO (avoids COEP cross-origin block)
 
 export function Workspace() {
   const { challengeId } = useParams<{ challengeId: string }>();
@@ -39,11 +36,9 @@ export function Workspace() {
   const [showExplorer, setShowExplorer] = useState(true);
   const [showTerminal, setShowTerminal] = useState(true);
   const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'explorer' | 'feedback'>('problem');
-  const [isInstalling, setIsInstalling] = useState(false);
-  const [installComplete, setInstallComplete] = useState(false);
   const [timeLeft, setTimeLeft] = useState(3600); // 60 minutes default
 
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const terminalInstanceRef = useRef<any>(null);
 
   // Timer logic
@@ -162,36 +157,15 @@ export function Workspace() {
           initialFiles = unflattenFiles(flatFiles);
         }
 
-        // 4. If no draft, load boilerplate
+        // 4. If no draft, load boilerplate from the challenge's files
         if (!initialFiles) {
-          console.log("No draft found, fetching boilerplate...");
-          const zipUrl = `${MINIO_BASE}${meta.zipUrl}`;
-          const zipResponse = await fetch(zipUrl);
-          
-          if (zipResponse.ok) {
-            const arrayBuffer = await zipResponse.arrayBuffer();
-            const jszip = await JSZip.loadAsync(arrayBuffer);
-            initialFiles = {};
-            
-            for (const [path, file] of Object.entries(jszip.files)) {
-              if (!file.dir) {
-                let content = await file.async('string');
-                // Apply WASM hot-patch to ZIP content
-                content = patchContent(path, content);
-
-                const parts = path.split('/');
-                let current = initialFiles;
-                for (let i = 0; i < parts.length; i++) {
-                  const part = parts[i];
-                  if (i === parts.length - 1) {
-                    current[part] = { file: { contents: content } };
-                  } else {
-                    current[part] = current[part] || { directory: {} };
-                    current = (current[part] as any).directory;
-                  }
-                }
-              }
+          console.log("No draft found, loading boilerplate...");
+          if (meta.files && Object.keys(meta.files).length > 0) {
+            const flatFiles: Record<string, string> = { ...meta.files };
+            for (const key of Object.keys(flatFiles)) {
+              flatFiles[key] = patchContent(key, flatFiles[key]);
             }
+            initialFiles = unflattenFiles(flatFiles);
           } else {
             // Fallback boilerplate
             initialFiles = {
@@ -212,27 +186,7 @@ export function Workspace() {
         else if (initialFiles['index.ts']) setSelectedFile('index.ts');
         else if (initialFiles['index.js']) setSelectedFile('index.js');
 
-        // Start background installation
-        setIsInstalling(true);
-        terminalInstanceRef.current?.write('\x1b[33m➤ Starting background installation...\x1b[0m\r\n');
-        
-        const installProcess = await wc.spawn('npm', ['install', '--no-audit', '--no-fund']);
-        installProcess.output.pipeTo(new WritableStream({
-          write(data) {
-            // Use ref to avoid stale closure issues
-            if (terminalInstanceRef.current) terminalInstanceRef.current.write(data);
-          }
-        }));
-        
-        const exitCode = await installProcess.exit;
-        setIsInstalling(false);
-        setInstallComplete(exitCode === 0);
-        
-        if (exitCode === 0) {
-          terminalInstanceRef.current?.write('\r\n\x1b[32m✔ Environment is ready! Click "Run Tests" to execute.\x1b[0m\r\n');
-        } else {
-          terminalInstanceRef.current?.write('\r\n\x1b[31m✘ Background installation failed. You can try running manually.\x1b[0m\r\n');
-        }
+        terminalInstanceRef.current?.write('\r\n\x1b[32m✔ Environment is ready! Click "Run Tests" to execute.\x1b[0m\r\n');
       } catch (err) {
         console.error("Failed to boot IDE", err);
       }
@@ -240,15 +194,12 @@ export function Workspace() {
     init();
   }, [challengeId, user]);
 
-  // Handle terminal readiness to catch background install logs
+  // Handle terminal readiness
   useEffect(() => {
     if (terminal) {
       terminalInstanceRef.current = terminal;
-      if (isInstalling) {
-        terminal.write('\x1b[33m➤ Dependencies are currently installing in the background...\x1b[0m\r\n');
-      }
     }
-  }, [terminal, isInstalling]);
+  }, [terminal]);
 
   // Debounced Auto-Save
   useEffect(() => {
@@ -271,41 +222,24 @@ export function Workspace() {
   }, [files, challengeId, user]);
 
   const handleRun = async () => {
-    if (!webcontainer || isRunning) return;
-    
-    if (isInstalling) {
-      terminal?.write('\r\n\x1b[33m⚠ Still installing dependencies. Please wait...\x1b[0m\r\n');
-      return;
-    }
+    if (!challengeId || !files || isRunning) return;
 
     setIsRunning(true);
+    if (terminal) {
+      terminal.reset();
+      terminal.write('\x1b[36m➤ Sending code to the Execution Service...\x1b[0m\r\n');
+    }
     try {
-      if (terminal) {
-        terminal.reset();
-        terminal.write('\x1b[36m➤ Executing code...\x1b[0m\r\n');
-      }
-      
-      const onData = (data: string) => {
-        terminal?.write(data);
-      };
+      // Runs server-side against the real Execution Service container — WebContainers can
+      // only run Node.js in-browser and can't execute a JVM/Maven project at all.
+      const result = await runChallenge(challengeId, flattenFiles(files));
+      terminal?.write(result.stdout.replace(/\n/g, '\r\n'));
+      if (result.stderr) terminal?.write(result.stderr.replace(/\n/g, '\r\n'));
 
-      if (!installComplete) {
-        terminal?.write('\x1b[33m➤ Dependencies not ready. Retrying npm install...\x1b[0m\r\n');
-        const installExitCode = await runCommand(webcontainer, 'npm', ['install'], onData, terminal);
-        if (installExitCode !== 0) {
-          terminal?.write('\r\n\x1b[31m✘ Dependency installation failed.\x1b[0m\r\n');
-          return;
-        }
-        setInstallComplete(true);
-      }
-
-      terminal?.write('\x1b[33m➤ Running tests (npm test)...\x1b[0m\r\n');
-      const testExitCode = await runCommand(webcontainer, 'npm', ['test'], onData, terminal);
-      
-      if (testExitCode === 0) {
+      if (result.success) {
         terminal?.write('\r\n\x1b[32m✔ Tests passed!\x1b[0m\r\n');
       } else {
-        terminal?.write(`\r\n\x1b[31m✘ Tests failed (Exit code: ${testExitCode}).\x1b[0m\r\n`);
+        terminal?.write(`\r\n\x1b[31m✘ Tests failed (Exit code: ${result.exitCode}).\x1b[0m\r\n`);
       }
     } catch (err) {
       console.error("Run failed", err);
@@ -324,39 +258,20 @@ export function Workspace() {
     setIsSubmitting(true);
     setSubmitStatus('Submitting...');
     try {
-      const initialSubmission = await submitChallenge({
-        userId: user.id,
+      // submitChallenge now blocks until the Execution Service finishes the test run
+      // and returns the final result directly — no separate poll-for-result step.
+      const submission = await submitChallenge({
         challengeId,
         files: flattenFiles(files),
-        isPremium: (user as any).isPremium || true, // Default to true for testing
         remainingTimeSeconds: timeLeft,
         userType: 'B2C'
       });
-      
-      setGradingResult(initialSubmission);
-      setSubmitStatus('Grading in progress...');
 
-      // Polling for completion
-      const pollInterval = setInterval(async () => {
-        try {
-          const updatedSubmission = await fetchSubmission(initialSubmission.id);
-          setGradingResult(updatedSubmission);
-          
-          if (updatedSubmission.status !== 'PENDING') {
-            clearInterval(pollInterval);
-            setIsSubmitting(false);
-            setSubmitStatus(updatedSubmission.status === 'COMPLETED' 
-              ? `Grading complete! Score: ${updatedSubmission.score}` 
-              : `Grading failed: ${updatedSubmission.status}`);
-          }
-        } catch (err) {
-          console.error("Polling failed", err);
-          clearInterval(pollInterval);
-          setIsSubmitting(false);
-          setSubmitStatus('Error checking grading status');
-        }
-      }, 2000);
-
+      setGradingResult(submission);
+      setIsSubmitting(false);
+      setSubmitStatus(submission.status === 'COMPLETED'
+        ? `Grading complete! Score: ${submission.score}`
+        : `Grading failed: ${submission.status}`);
     } catch (err) {
       console.error("Submission failed", err);
       setSubmitStatus('Submission failed');
@@ -613,12 +528,6 @@ export function Workspace() {
                   <div className="h-7 border-b border-border-main bg-panel flex items-center px-3 shrink-0 justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-text-muted font-black uppercase tracking-widest">Terminal</span>
-                      {isInstalling && (
-                        <div className="flex items-center gap-1.5 animate-pulse">
-                          <CircleDot size={8} className="text-primary" />
-                          <span className="text-[8px] text-text-muted font-bold uppercase">Background Install...</span>
-                        </div>
-                      )}
                     </div>
                     <button 
                       onClick={() => setShowTerminal(false)}
@@ -664,7 +573,7 @@ export function Workspace() {
           </div>
           <div className="w-px h-2.5 bg-border-main" />
           <div className="text-[9px] text-text-muted font-mono tracking-tighter uppercase">
-            {isRunning ? 'EXECUTING...' : isInstalling ? 'INSTALLING...' : 'IDLE'}
+            {isRunning ? 'EXECUTING...' : 'IDLE'}
           </div>
         </div>
         {submitStatus && (

@@ -75,21 +75,21 @@ export function Login() {
   const handleDevAutoLogin = useCallback(async () => {
     const devValues = { email: 'test@example.com', password: 'password' };
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(devValues),
       });
       if (response.ok) {
-        const user = await response.json();
-        login(user);
+        const data = await response.json();
+        login({ id: data.userId, email: data.email, name: data.email, username: data.email.split('@')[0], token: data.token });
         navigate('/');
       } else {
-        login({ id: '550e8400-e29b-41d4-a716-446655440000', email: 'test@example.com', name: 'Dev User', username: 'devuser' });
+        login({ id: '550e8400-e29b-41d4-a716-446655440000', email: 'test@example.com', name: 'Dev User', username: 'devuser', token: '' });
         navigate('/');
       }
     } catch {
-      login({ id: '550e8400-e29b-41d4-a716-446655440000', email: 'test@example.com', name: 'Dev User', username: 'devuser' });
+      login({ id: '550e8400-e29b-41d4-a716-446655440000', email: 'test@example.com', name: 'Dev User', username: 'devuser', token: '' });
       navigate('/');
     }
   }, [login, navigate]);
@@ -97,7 +97,7 @@ export function Login() {
   const onSubmit = useCallback(async (values: LoginFormValues) => {
     setError(null);
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
@@ -108,8 +108,8 @@ export function Login() {
         throw new Error(data.message || 'Login failed');
       }
 
-      const user = await response.json();
-      login(user);
+      const data = await response.json();
+      login({ id: data.userId, email: data.email, name: data.email, username: data.email.split('@')[0], token: data.token });
       navigate('/');
     } catch (err: any) {
       setError(err.message);

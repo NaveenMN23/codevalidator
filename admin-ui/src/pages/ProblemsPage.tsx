@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { listProblems, createProblem, updateProblem, deleteProblem, setPublished } from '../lib/api'
 import { Plus, Edit2, Trash2, Globe, EyeOff } from 'lucide-react'
 
-type Problem = { id: string; slug: string; title: string; difficulty: string; isPublished: boolean; tags: string[]; description?: string; problemLink?: string }
+type Problem = { id: string; slug: string; title: string; difficulty: string; tiers?: string[]; isPublished: boolean; tags: string[]; description?: string; problemLink?: string }
 
 const INPUT: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }
 const LABEL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 6, display: 'block' }
@@ -99,7 +99,9 @@ export default function ProblemsPage() {
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{p.slug}</div>
                 </td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: DIFF_COLOR[p.difficulty] || 'var(--text-secondary)' }}>{p.difficulty}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: DIFF_COLOR[p.difficulty?.toUpperCase()] || 'var(--text-secondary)' }}>
+                    {p.difficulty?.toUpperCase() ?? '—'}
+                  </span>
                 </td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>

@@ -43,6 +43,9 @@ public class Problem {
     @Column
     private String tier;
 
+    @Column
+    private String language;
+
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(columnDefinition = "text[]")
     private List<String> tags;
@@ -113,6 +116,14 @@ public class Problem {
 
     public String getTier() {
         return tier;
+    }
+
+    public String getLanguage() {
+        return language;
+    }
+
+    public void setLanguage(String language) {
+        this.language = language;
     }
 
     public List<String> getTags() {

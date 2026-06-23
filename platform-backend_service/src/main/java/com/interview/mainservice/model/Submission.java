@@ -25,8 +25,14 @@ public class Submission {
     @Column(name = "submission_link", nullable = false)
     private String submissionLink;
 
+    @Column(nullable = false)
+    private String status;
+
     @Column
     private Double score;
+
+    @Column(columnDefinition = "TEXT")
+    private String logs;
 
     @Column(name = "submitted_at", nullable = false)
     private Instant submittedAt;
@@ -68,8 +74,28 @@ public class Submission {
         return submissionLink;
     }
 
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
     public Double getScore() {
         return score;
+    }
+
+    public void setScore(Double score) {
+        this.score = score;
+    }
+
+    public String getLogs() {
+        return logs;
+    }
+
+    public void setLogs(String logs) {
+        this.logs = logs;
     }
 
     public Instant getSubmittedAt() {

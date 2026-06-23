@@ -18,11 +18,19 @@ spring:
     password: ${RABBITMQ_PASSWORD:password}
 
 app:
+  security:
+    auth-required: ${SECURITY_AUTH_ENABLED:true}
   jwt:
     secret: ${JWT_SECRET:change-this-to-a-256-bit-secret-in-every-environment}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
   execution-service:
     base-url: ${EXECUTION_SERVICE_URL:http://localhost:8001}
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:admin}
+    secret-key: ${MINIO_SECRET_KEY:password}
+    challenges-bucket: ${MINIO_CHALLENGES_BUCKET:challenges}
+  grading-queue: ${GRADING_QUEUE:grading-queue}
 
 management:
   endpoints:

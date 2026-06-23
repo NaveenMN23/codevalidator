@@ -14,6 +14,7 @@ public record ProblemResponse(
     String difficulty,
     String problemLink,
     List<String> tags,
+    List<String> tiers,
     boolean isPublished,
     Instant createdAt,
     Instant updatedAt
@@ -22,6 +23,7 @@ public record ProblemResponse(
         return new ProblemResponse(
             p.getId(), p.getSlug(), p.getTitle(), p.getDescription(),
             p.getDifficulty(), p.getProblemLink(), p.getTags(),
+            p.getTiers() != null ? p.getTiers() : List.of(),
             p.isPublished(), p.getCreatedAt(), p.getUpdatedAt()
         );
     }

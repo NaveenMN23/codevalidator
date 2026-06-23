@@ -30,6 +30,9 @@ public class GenerationJob {
     @Column(name = "scenarios_per_tier", nullable = false)
     private int scenariosPerTier;
 
+    @Column(name = "debug_scenarios_per_tier", nullable = false)
+    private int debugScenariosPerTier = 1;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private GenerationJobStatus status;
@@ -59,12 +62,13 @@ public class GenerationJob {
 
     protected GenerationJob() {}
 
-    public static GenerationJob create(String prompt, List<String> languages, List<String> tiers, int scenariosPerTier) {
+    public static GenerationJob create(String prompt, List<String> languages, List<String> tiers, int scenariosPerTier, int debugScenariosPerTier) {
         GenerationJob job = new GenerationJob();
         job.prompt = prompt;
         job.languages = languages;
         job.tiers = tiers;
         job.scenariosPerTier = scenariosPerTier;
+        job.debugScenariosPerTier = debugScenariosPerTier;
         job.status = GenerationJobStatus.DESIGNING;
         return job;
     }
@@ -87,6 +91,8 @@ public class GenerationJob {
     public List<String> getLanguages() { return languages; }
     public List<String> getTiers() { return tiers; }
     public int getScenariosPerTier() { return scenariosPerTier; }
+    public int getDebugScenariosPerTier() { return debugScenariosPerTier; }
+    public void setDebugScenariosPerTier(int debugScenariosPerTier) { this.debugScenariosPerTier = debugScenariosPerTier; }
     public GenerationJobStatus getStatus() { return status; }
     public String getDesignJson() { return designJson; }
     public String getDesignFeedback() { return designFeedback; }

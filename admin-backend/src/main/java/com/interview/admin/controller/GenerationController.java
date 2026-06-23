@@ -49,6 +49,11 @@ public class GenerationController {
         return ResponseEntity.ok(generationService.cancelJob(jobId));
     }
 
+    @PostMapping("/{jobId}/retry")
+    public ResponseEntity<GenerationJobResponse> retryJob(@PathVariable UUID jobId) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(generationService.retryJob(jobId));
+    }
+
     @GetMapping("/history")
     public ResponseEntity<List<GenerationJobResponse>> getHistory() {
         return ResponseEntity.ok(generationService.getHistory());

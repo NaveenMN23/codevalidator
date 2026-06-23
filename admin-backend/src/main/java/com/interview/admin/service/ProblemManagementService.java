@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ProblemManagementService {
@@ -82,19 +83,87 @@ public class ProblemManagementService {
         problemRepository.deleteById(id);
     }
 
+    @Transactional
     @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
-    public Problem createFromJob(GenerationJob job) {
-        String slug = extractSlug(job.getResultJson(), job.getPrompt());
-        slug = uniqueSlug(slug);
-
-        String title = toTitleCase(slug.replace('-', ' '));
+    public List<Problem> createFromJob(GenerationJob job) {
+        String challengeSlug = extractSlug(job.getResultJson(), job.getPrompt());
         String description = job.getPrompt();
         String domain = extractDomain(job.getDesignJson());
+        List<String> tiers = job.getTiers();
         List<String> tags = buildTags(domain, job.getLanguages());
-        String problemLink = "/challenges/" + slug;
+        String problemLink = "/challenges/" + challengeSlug;
+        String language = (job.getLanguages() != null && !job.getLanguages().isEmpty())
+                ? job.getLanguages().get(0) : "node";
 
-        Problem problem = Problem.create(slug, title, description, "MIXED", problemLink, tags);
-        return problemRepository.save(problem);
+        List<Map<String, Object>> scenarios = extractAllScenarios(job.getResultJson(), language);
+        if (scenarios.isEmpty()) {
+            String slug = uniqueSlug(challengeSlug);
+            String difficulty = (tiers != null && !tiers.isEmpty()) ? tiers.get(0).toUpperCase() : "EASY";
+            Problem p = Problem.create(slug, toTitleCase(slug.replace('-', ' ')), description, difficulty, problemLink, tags);
+            p.setTiers(tiers != null ? tiers : List.of());
+            p.setLanguage(language);
+            p.setTier((tiers != null && !tiers.isEmpty()) ? tiers.get(0) + "-scenario-1" : "easy-scenario-1");
+            p.setPublished(true);
+            return List.of(problemRepository.save(p));
+        }
+
+        List<Problem> created = new ArrayList<>();
+        for (Map<String, Object> scenario : scenarios) {
+            String tag = (String) scenario.get("tag");
+            if (tag == null || tag.isBlank()) continue;
+            String tierStr = scenario.get("tier") instanceof String t ? t : "easy";
+            String difficulty = tierStr.toUpperCase();
+            String slug = uniqueSlug(challengeSlug + "-" + tag);
+            String title = toTitleCase(slug.replace('-', ' '));
+            Problem p = Problem.create(slug, title, description, difficulty, problemLink, tags);
+            p.setTiers(tiers != null ? tiers : List.of());
+            p.setLanguage(language);
+            p.setTier(tag);
+            p.setPublished(true);
+            created.add(problemRepository.save(p));
+        }
+        return created;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractAllScenarios(String resultJson, String language) {
+        if (resultJson == null) return List.of();
+        try {
+            Map<String, Object> result = objectMapper.readValue(resultJson, new TypeReference<>() {});
+            Object manifests = result.get("manifests");
+            if (!(manifests instanceof Map<?, ?> manifestsMap)) return List.of();
+            Object langManifest = manifestsMap.get(language);
+            if (!(langManifest instanceof Map<?, ?> lm)) return List.of();
+            Object scenarios = lm.get("scenarios");
+            if (scenarios == null) return List.of();
+
+            // Actual codegen format: scenarios is a Map keyed by scenario name
+            if (scenarios instanceof Map<?, ?> scenariosMap) {
+                List<Map<String, Object>> results = new ArrayList<>();
+                for (Map.Entry<?, ?> entry : scenariosMap.entrySet()) {
+                    if (!(entry.getValue() instanceof Map<?, ?> sm)) continue;
+                    String scenarioKey = String.valueOf(entry.getKey()); // e.g. "easy-restock-product"
+                    String tier = sm.get("tier") instanceof String t ? t
+                                  : (scenarioKey.contains("-") ? scenarioKey.split("-")[0] : scenarioKey);
+                    Map<String, Object> info = new java.util.LinkedHashMap<>();
+                    info.put("tag", scenarioKey);  // actual key — becomes slug suffix AND tier field
+                    info.put("tier", tier);        // difficulty prefix ("easy", "medium", "hard")
+                    results.add(info);
+                }
+                return results;
+            }
+
+            // Legacy array format
+            if (scenarios instanceof List<?> list) {
+                return list.stream()
+                        .filter(s -> s instanceof Map<?, ?>)
+                        .map(s -> (Map<String, Object>) s)
+                        .toList();
+            }
+        } catch (Exception e) {
+            log.warn("Could not extract scenarios from resultJson: {}", e.getMessage());
+        }
+        return List.of();
     }
 
     private String extractSlug(String resultJson, String fallbackPrompt) {

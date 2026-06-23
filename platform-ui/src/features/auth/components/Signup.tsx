@@ -61,12 +61,13 @@ export function Signup() {
   const onSubmit = useCallback(async (values: SignupFormValues) => {
     setError(null);
     try {
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch('/api/v1/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...values,
-          name: values.name || values.username,
+          email: values.email,
+          password: values.password,
+          displayName: values.name || values.username,
         }),
       });
 
@@ -75,8 +76,8 @@ export function Signup() {
         throw new Error(data.message || 'Signup failed');
       }
 
-      const user = await response.json();
-      login(user);
+      const data = await response.json();
+      login({ id: data.userId, email: data.email, name: data.email, username: data.email.split('@')[0], token: data.token });
       navigate('/');
     } catch (err: any) {
       setError(err.message);

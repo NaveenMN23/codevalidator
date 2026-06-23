@@ -9,6 +9,7 @@ public record CodegenRequestMessage(
     List<String> languages,
     List<String> tiers,
     int scenariosPerTier,
+    int debugScenariosPerTier,
     String designJson,
     String feedback
 ) {}
