@@ -18,7 +18,6 @@ export async function fetchChallenges(): Promise<Challenge[]> {
     title: p.title,
     difficulty: normalizeDifficulty(p.difficulty),
     language: p.language ?? (p.tags?.find((t: string) => ['node', 'java', 'python'].includes(t)) ?? 'node'),
-    zipUrl: p.zipUrl ?? `/api/v1/problems/${p.id}/zip`,
     description: p.description,
   }));
 }
@@ -32,7 +31,7 @@ export async function fetchChallenge(id: string): Promise<Challenge> {
     title: p.title,
     difficulty: normalizeDifficulty(p.difficulty),
     language: p.language ?? (p.tags?.find((t: string) => ['node', 'java', 'python'].includes(t)) ?? 'node'),
-    zipUrl: p.zipUrl ?? `/api/v1/problems/${p.id}/zip`,
+    files: p.files,
     description: p.description,
   };
 }
@@ -63,7 +62,29 @@ export async function deleteDraft(challengeId: string, _userId: string): Promise
   if (!response.ok) throw new Error('Failed to delete draft');
 }
 
+export interface RunResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+export async function runChallenge(challengeId: string, files: Record<string, string>): Promise<RunResult> {
+  // Runs the current file contents against the real Execution Service (the same Docker
+  // container Submit uses) — code in WebContainers can't run a JVM/Maven project, so this
+  // can't happen client-side for Java challenges.
+  const response = await fetch(`/api/v1/problems/${challengeId}/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ files }),
+  });
+  if (!response.ok) throw new Error(`Run failed (HTTP ${response.status})`);
+  return response.json();
+}
+
 export async function submitChallenge(payload: SubmissionRequest): Promise<GradingResult> {
+  // Blocks until the Execution Service finishes the test run; the backend returns the
+  // final result directly (no separate /submissions/{id} poll endpoint anymore).
   const response = await fetch(`/api/v1/problems/${payload.challengeId}/submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -74,16 +95,6 @@ export async function submitChallenge(payload: SubmissionRequest): Promise<Gradi
     }),
   });
   if (!response.ok) throw new Error('Submission failed');
-  const data = await response.json();
-  // Backend returns { id } with 202 — return a PENDING placeholder
-  return { id: data.id, status: 'PENDING', score: null, logs: null };
-}
-
-export async function fetchSubmission(id: string): Promise<GradingResult> {
-  const response = await fetch(`/api/v1/submissions/${id}`, {
-    headers: { ...getAuthHeaders() },
-  });
-  if (!response.ok) throw new Error('Failed to fetch submission result');
   return response.json();
 }
 

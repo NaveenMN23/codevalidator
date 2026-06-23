@@ -16,7 +16,7 @@ public class SubmitService {
     // Same command as Run — both just run `mvn test`; the difference is Submit has the hidden
     // test injected first. Matches the existing "one-at-a-time" failure feedback the platform
     // already uses for grading.
-    private static final String LANGUAGE = "java";
+    private static final String DEFAULT_LANGUAGE = "java";
     private static final String SUBMIT_COMMAND = "mvn -o test -Dsurefire.skipAfterFailureCount=1";
 
     private final ProblemRepository problemRepository;
@@ -38,9 +38,10 @@ public class SubmitService {
         }
 
         // Same session id as Run — reuses the session's warm container rather than a fresh one.
+        String language = problem.getLanguage() != null ? problem.getLanguage() : DEFAULT_LANGUAGE;
         String sessionId = SessionIdentifier.of(userId, problemId);
         try {
-            return executionServiceClient.submit(sessionId, problem.getSlug(), tier, LANGUAGE,
+            return executionServiceClient.submit(sessionId, problem.getSlug(), tier, language,
                     request.files(), SUBMIT_COMMAND);
         } catch (BulkheadFullException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,

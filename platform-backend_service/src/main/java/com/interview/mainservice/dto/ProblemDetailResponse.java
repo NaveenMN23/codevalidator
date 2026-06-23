@@ -2,6 +2,7 @@ package com.interview.mainservice.dto;
 
 import com.interview.mainservice.model.Difficulty;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record ProblemDetailResponse(
@@ -11,7 +12,7 @@ public record ProblemDetailResponse(
         String description,
         Difficulty difficulty,
         String language,
-        String zipUrl,
+        Map<String, String> files,
         String problemLink,
         List<String> tags) {
 }

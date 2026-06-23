@@ -1,14 +1,13 @@
 package com.interview.mainservice.controller;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.interview.mainservice.dto.RunResponse;
 import com.interview.mainservice.dto.SubmitRequest;
-import com.interview.mainservice.messaging.GradingPublisher;
-import com.interview.mainservice.model.Problem;
 import com.interview.mainservice.model.Submission;
 import com.interview.mainservice.repository.ProblemRepository;
 import com.interview.mainservice.repository.SubmissionRepository;
+import com.interview.mainservice.service.SubmitService;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -22,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -32,53 +32,61 @@ public class SubmitController {
 
     private final ProblemRepository problemRepository;
     private final SubmissionRepository submissionRepository;
-    private final GradingPublisher gradingPublisher;
-    private final ObjectMapper objectMapper;
+    private final SubmitService submitService;
     private final ExecutorService executionServiceExecutor;
 
     public SubmitController(ProblemRepository problemRepository,
                              SubmissionRepository submissionRepository,
-                             GradingPublisher gradingPublisher,
-                             ObjectMapper objectMapper,
+                             SubmitService submitService,
                              ExecutorService executionServiceExecutor) {
         this.problemRepository = problemRepository;
         this.submissionRepository = submissionRepository;
-        this.gradingPublisher = gradingPublisher;
-        this.objectMapper = objectMapper;
+        this.submitService = submitService;
         this.executionServiceExecutor = executionServiceExecutor;
     }
 
     @PostMapping("/{id}/submit")
-    public ResponseEntity<Map<String, String>> submit(@PathVariable("id") UUID problemId,
-                                                       @AuthenticationPrincipal UUID userId,
-                                                       @RequestBody SubmitRequest request) {
-        Problem problem = problemRepository.findById(problemId)
+    public DeferredResult<ResponseEntity<Map<String, Object>>> submit(@PathVariable("id") UUID problemId,
+                                                                        @AuthenticationPrincipal UUID userId,
+                                                                        @RequestBody SubmitRequest request) {
+        problemRepository.findById(problemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
 
-        // Create submission record with PENDING status immediately
-        Submission submission = new Submission(userId, problemId, "", Instant.now());
-        submission.setStatus("PENDING");
-        submissionRepository.save(submission);
-        UUID submissionId = submission.getId();
+        DeferredResult<ResponseEntity<Map<String, Object>>> deferredResult = new DeferredResult<>();
 
-        // Fire-and-forget: serialize files and publish to grading queue
+        // Same virtual-thread executor Run uses: releases this Tomcat platform thread
+        // immediately and parks cheaply on the blocking Execution Service call instead
+        // (see ExecutionConfig, RunController).
         executionServiceExecutor.submit(() -> {
             try {
-                String filesJson = objectMapper.writeValueAsString(request.files());
-                int remainingTime = request.remainingTimeSeconds() != null ? request.remainingTimeSeconds() : 3600;
-                String userType = request.userType() != null ? request.userType() : "B2C";
-                gradingPublisher.publishGradingRequest(submissionId, problemId, userId,
-                        filesJson, remainingTime, userType);
-            } catch (JsonProcessingException e) {
-                log.error("Failed to serialize files for submission {}: {}", submissionId, e.getMessage());
-                Submission s = submissionRepository.findById(submissionId).orElse(null);
-                if (s != null) {
-                    s.setStatus("FAILED");
-                    submissionRepository.save(s);
-                }
+                RunResponse result = submitService.submit(userId, problemId, request);
+                Submission submission = saveSubmission(userId, problemId, result);
+                deferredResult.setResult(ResponseEntity.ok(toResponse(submission)));
+            } catch (ResponseStatusException e) {
+                deferredResult.setResult(ResponseEntity.status(e.getStatusCode()).build());
+            } catch (Exception e) {
+                log.error("Submit failed for problem {}: {}", problemId, e.getMessage());
+                deferredResult.setResult(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
             }
         });
 
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("id", submissionId.toString()));
+        return deferredResult;
+    }
+
+    private Submission saveSubmission(UUID userId, UUID problemId, RunResponse result) {
+        Submission submission = new Submission(userId, problemId, "", Instant.now());
+        submission.setStatus(result.success() ? "COMPLETED" : "FAILED");
+        submission.setScore(result.success() ? 100.0 : 0.0);
+        submission.setLogs(result.success() ? result.stdout() : result.stdout() + "\n" + result.stderr());
+        return submissionRepository.save(submission);
+    }
+
+    private Map<String, Object> toResponse(Submission submission) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", submission.getId().toString());
+        body.put("status", submission.getStatus());
+        body.put("score", submission.getScore());
+        body.put("logs", submission.getLogs());
+        return body;
     }
 }

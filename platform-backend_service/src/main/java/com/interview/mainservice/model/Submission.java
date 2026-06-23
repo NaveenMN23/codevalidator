@@ -26,13 +26,13 @@ public class Submission {
     private String submissionLink;
 
     @Column(nullable = false)
-    private String status = "PENDING";
+    private String status;
 
     @Column
     private Double score;
 
-    @Column(name = "feedback_json", columnDefinition = "TEXT")
-    private String feedbackJson;
+    @Column(columnDefinition = "TEXT")
+    private String logs;
 
     @Column(name = "submitted_at", nullable = false)
     private Instant submittedAt;
@@ -90,12 +90,12 @@ public class Submission {
         this.score = score;
     }
 
-    public String getFeedbackJson() {
-        return feedbackJson;
+    public String getLogs() {
+        return logs;
     }
 
-    public void setFeedbackJson(String feedbackJson) {
-        this.feedbackJson = feedbackJson;
+    public void setLogs(String logs) {
+        this.logs = logs;
     }
 
     public Instant getSubmittedAt() {

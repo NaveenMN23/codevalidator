@@ -4,7 +4,7 @@ export interface Challenge {
   title: string;
   difficulty: string;
   language: string;
-  zipUrl: string;
+  files?: Record<string, string>;
   description?: string;
 }
 
@@ -13,23 +13,15 @@ export interface ChallengeDraft {
 }
 
 export interface SubmissionRequest {
-  userId: string;
   challengeId: string;
   files: Record<string, string>;
-  isPremium?: boolean;
   remainingTimeSeconds?: number;
   userType?: 'B2C' | 'B2B';
 }
 
 export interface GradingResult {
   id: string;
-  status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'TIMEOUT';
+  status: 'COMPLETED' | 'FAILED';
   score: number | null;
   logs: string | null;
-  feedback?: {
-    correctness: { finding: string; score: number };
-    efficiency: { finding: string; score: number };
-    followUp: { type: 'IMPLEMENTATION' | 'CONVERSATIONAL'; content: string };
-    summary: string;
-  };
 }

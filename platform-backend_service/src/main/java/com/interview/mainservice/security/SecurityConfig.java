@@ -31,13 +31,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> {
                     authorize
                             .requestMatchers("/api/v1/auth/**", "/actuator/health", "/actuator/info").permitAll()
-                            .requestMatchers("/api/v1/problems/*/zip").permitAll()
                             .requestMatchers("/api/v1/problems", "/api/v1/problems/**").permitAll();
                     if (authRequired) {
                         authorize
                                 .requestMatchers("/api/v1/problems/*/run", "/api/v1/problems/*/submit").authenticated()
                                 .requestMatchers("/api/v1/drafts/**").authenticated()
-                                .requestMatchers("/api/v1/submissions/**").authenticated()
                                 .anyRequest().authenticated();
                     } else {
                         authorize.anyRequest().permitAll();
