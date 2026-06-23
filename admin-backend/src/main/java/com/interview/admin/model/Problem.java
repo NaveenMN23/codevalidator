@@ -35,6 +35,16 @@ public class Problem {
     @Column(columnDefinition = "text[]")
     private List<String> tags;
 
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(columnDefinition = "text[]")
+    private List<String> tiers;
+
+    @Column
+    private String language;
+
+    @Column
+    private String tier;
+
     @Column(name = "is_published", nullable = false)
     private boolean isPublished = false;
 
@@ -88,5 +98,11 @@ public class Problem {
     public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
     public void setProblemLink(String problemLink) { this.problemLink = problemLink; }
     public void setTags(List<String> tags) { this.tags = tags; }
+    public List<String> getTiers() { return tiers; }
+    public void setTiers(List<String> tiers) { this.tiers = tiers; }
     public void setPublished(boolean published) { this.isPublished = published; }
+    public String getLanguage() { return language; }
+    public void setLanguage(String language) { this.language = language; }
+    public String getTier() { return tier; }
+    public void setTier(String tier) { this.tier = tier; }
 }

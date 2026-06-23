@@ -73,7 +73,7 @@ export function Navbar() {
             <Link to="/login" style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none', padding: '6px 14px' }}>
               Log in
             </Link>
-            <Link to="/signup" style={{ fontSize: 13, fontWeight: 500, background: 'var(--accent-color)', color: '#fff', textDecoration: 'none', padding: '6px 14px', borderRadius: 8 }}>
+            <Link to="/signup" style={{ fontSize: 13, fontWeight: 500, background: '#000', color: '#fff', textDecoration: 'none', padding: '6px 14px', borderRadius: 8 }}>
               Sign up
             </Link>
           </div>

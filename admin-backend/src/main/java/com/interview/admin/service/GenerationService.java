@@ -8,6 +8,7 @@ import com.interview.admin.messaging.CodegenRequestPublisher;
 import com.interview.admin.model.GenerationJob;
 import com.interview.admin.model.GenerationJobStatus;
 import com.interview.admin.model.Problem;
+import java.util.List;
 import com.interview.admin.repository.GenerationJobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -170,9 +171,11 @@ public class GenerationService {
                     job.setStatus(GenerationJobStatus.COMPLETED);
                     jobRepository.save(job);
                     try {
-                        Problem problem = problemService.createFromJob(job);
-                        job.setProblemId(problem.getId());
-                        log.info("Created problem {} from generation job {}", problem.getId(), jobId);
+                        List<Problem> problems = problemService.createFromJob(job);
+                        if (!problems.isEmpty()) {
+                            job.setProblemId(problems.get(0).getId());
+                            log.info("Created {} problems from generation job {}", problems.size(), jobId);
+                        }
                     } catch (Exception e) {
                         log.error("Failed to create problem from job {}: {}", jobId, e.getMessage(), e);
                     }

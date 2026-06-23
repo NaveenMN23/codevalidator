@@ -1,9 +1,11 @@
 export interface Challenge {
   id: string;
+  slug?: string;
   title: string;
-  difficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  difficulty: string;
   language: string;
   zipUrl: string;
+  description?: string;
 }
 
 export interface ChallengeDraft {

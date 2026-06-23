@@ -1,5 +1,6 @@
 package com.interview.mainservice.security;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -13,6 +14,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 public class SecurityConfig {
 
+    @Value("${app.security.auth-required:true}")
+    private boolean authRequired;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -24,11 +28,21 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/v1/auth/**", "/actuator/health", "/actuator/info").permitAll()
-                        .requestMatchers("/api/v1/problems/*/run", "/api/v1/problems/*/submit").authenticated()
-                        .requestMatchers("/api/v1/problems", "/api/v1/problems/**").permitAll()
-                        .anyRequest().authenticated())
+                .authorizeHttpRequests(authorize -> {
+                    authorize
+                            .requestMatchers("/api/v1/auth/**", "/actuator/health", "/actuator/info").permitAll()
+                            .requestMatchers("/api/v1/problems/*/zip").permitAll()
+                            .requestMatchers("/api/v1/problems", "/api/v1/problems/**").permitAll();
+                    if (authRequired) {
+                        authorize
+                                .requestMatchers("/api/v1/problems/*/run", "/api/v1/problems/*/submit").authenticated()
+                                .requestMatchers("/api/v1/drafts/**").authenticated()
+                                .requestMatchers("/api/v1/submissions/**").authenticated()
+                                .anyRequest().authenticated();
+                    } else {
+                        authorize.anyRequest().permitAll();
+                    }
+                })
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

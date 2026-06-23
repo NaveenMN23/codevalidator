@@ -26,6 +26,9 @@ public class Draft {
     @Column(name = "draft_link", nullable = false)
     private String draftLink;
 
+    @Column(name = "files_json", columnDefinition = "TEXT")
+    private String filesJson;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -54,6 +57,14 @@ public class Draft {
 
     public String getDraftLink() {
         return draftLink;
+    }
+
+    public String getFilesJson() {
+        return filesJson;
+    }
+
+    public void setFilesJson(String filesJson) {
+        this.filesJson = filesJson;
     }
 
     public Instant getUpdatedAt() {

@@ -39,12 +39,15 @@ public class ProblemService {
     }
 
     private ProblemSummaryResponse toSummary(Problem problem) {
+        String zipUrl = "/api/v1/problems/" + problem.getId() + "/zip";
         return new ProblemSummaryResponse(problem.getId(), problem.getSlug(), problem.getTitle(),
-                problem.getDifficulty(), problem.getTags());
+                problem.getDifficulty(), problem.getLanguage(), zipUrl, problem.getTags());
     }
 
     private ProblemDetailResponse toDetail(Problem problem) {
+        String zipUrl = "/api/v1/problems/" + problem.getId() + "/zip";
         return new ProblemDetailResponse(problem.getId(), problem.getSlug(), problem.getTitle(),
-                problem.getDescription(), problem.getDifficulty(), problem.getProblemLink(), problem.getTags());
+                problem.getDescription(), problem.getDifficulty(), problem.getLanguage(), zipUrl,
+                problem.getProblemLink(), problem.getTags());
     }
 }

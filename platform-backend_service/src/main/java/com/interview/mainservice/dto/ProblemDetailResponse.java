@@ -10,6 +10,8 @@ public record ProblemDetailResponse(
         String title,
         String description,
         Difficulty difficulty,
+        String language,
+        String zipUrl,
         String problemLink,
         List<String> tags) {
 }
