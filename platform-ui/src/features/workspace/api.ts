@@ -23,6 +23,8 @@ export async function fetchChallenges(): Promise<Challenge[]> {
 }
 
 export async function fetchChallenge(id: string): Promise<Challenge> {
+  // Metadata only — fast DB read, no S3 involved. Use fetchChallengeFiles() separately
+  // when the actual file contents are needed (skip it entirely if a draft exists).
   const response = await fetch(`/api/v1/problems/${id}`);
   if (!response.ok) throw new Error('Failed to fetch challenge');
   const p = await response.json();
@@ -31,25 +33,40 @@ export async function fetchChallenge(id: string): Promise<Challenge> {
     title: p.title,
     difficulty: normalizeDifficulty(p.difficulty),
     language: p.language ?? (p.tags?.find((t: string) => ['node', 'java', 'python'].includes(t)) ?? 'node'),
-    files: p.files,
     description: p.description,
   };
 }
 
-export async function fetchDraft(challengeId: string, _userId: string): Promise<Record<string, any> | null> {
+export async function fetchChallengeFiles(id: string): Promise<Record<string, string>> {
+  const response = await fetch(`/api/v1/problems/${id}/files`);
+  if (!response.ok) throw new Error('Failed to fetch challenge files');
+  return response.json();
+}
+
+export interface DraftData {
+  files: Record<string, string>;
+  pendingTime: number | null;
+}
+
+export async function fetchDraft(challengeId: string, _userId: string): Promise<DraftData | null> {
   const response = await fetch(`/api/v1/drafts/${challengeId}`, {
     headers: { ...getAuthHeaders() },
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error('Failed to fetch draft');
-  return response.json() as Promise<Record<string, any>>;
+  return response.json() as Promise<DraftData>;
 }
 
-export async function saveDraft(challengeId: string, _userId: string, files: Record<string, any>): Promise<void> {
+export async function saveDraft(
+  challengeId: string,
+  _userId: string,
+  files: Record<string, any>,
+  pendingTime: number
+): Promise<void> {
   const response = await fetch(`/api/v1/drafts/${challengeId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ files }),
+    body: JSON.stringify({ files, pendingTime }),
   });
   if (!response.ok) throw new Error('Failed to save draft');
 }

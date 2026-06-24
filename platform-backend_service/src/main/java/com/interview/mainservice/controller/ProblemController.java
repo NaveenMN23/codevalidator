@@ -4,6 +4,7 @@ import com.interview.mainservice.dto.PageResponse;
 import com.interview.mainservice.dto.ProblemDetailResponse;
 import com.interview.mainservice.dto.ProblemSummaryResponse;
 import com.interview.mainservice.service.ProblemService;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,5 +30,10 @@ public class ProblemController {
     @GetMapping("/{id}")
     public ProblemDetailResponse getProblem(@PathVariable UUID id) {
         return problemService.getProblem(id);
+    }
+
+    @GetMapping("/{id}/files")
+    public Map<String, String> getProblemFiles(@PathVariable UUID id) {
+        return problemService.getProblemFiles(id);
     }
 }
