@@ -1,6 +1,7 @@
 package com.interview.mainservice.controller;
 
 import com.interview.mainservice.service.DraftService;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,29 +29,42 @@ public class DraftController {
     @GetMapping("/{problemId}")
     public ResponseEntity<Map<String, Object>> getDraft(@PathVariable UUID problemId,
                                                          @AuthenticationPrincipal UUID userId) {
-        Optional<Map<String, String>> files = draftService.getDraft(userId, problemId);
-        if (files.isEmpty() || files.get() == null) {
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        Optional<DraftService.DraftData> draft = draftService.getDraft(userId, problemId);
+        if (draft.isEmpty() || draft.get() == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(Map.of("files", files.get()));
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("files", draft.get().files());
+        response.put("pendingTime", draft.get().pendingTime());
+        return ResponseEntity.ok(response);
     }
 
     @PutMapping("/{problemId}")
     public ResponseEntity<Void> saveDraft(@PathVariable UUID problemId,
                                            @AuthenticationPrincipal UUID userId,
                                            @RequestBody Map<String, Object> body) {
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         @SuppressWarnings("unchecked")
         Map<String, String> files = (Map<String, String>) body.get("files");
         if (files == null) {
             return ResponseEntity.badRequest().build();
         }
-        draftService.saveDraft(userId, problemId, files);
+        Integer pendingTime = body.get("pendingTime") instanceof Number n ? n.intValue() : null;
+        draftService.saveDraft(userId, problemId, files, pendingTime);
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/{problemId}")
     public ResponseEntity<Void> deleteDraft(@PathVariable UUID problemId,
                                              @AuthenticationPrincipal UUID userId) {
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         draftService.deleteDraft(userId, problemId);
         return ResponseEntity.noContent().build();
     }

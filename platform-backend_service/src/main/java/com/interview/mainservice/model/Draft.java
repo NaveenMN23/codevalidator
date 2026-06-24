@@ -29,6 +29,9 @@ public class Draft {
     @Column(name = "files_json", columnDefinition = "TEXT")
     private String filesJson;
 
+    @Column(name = "pending_time")
+    private Integer pendingTime;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -65,6 +68,14 @@ public class Draft {
 
     public void setFilesJson(String filesJson) {
         this.filesJson = filesJson;
+    }
+
+    public Integer getPendingTime() {
+        return pendingTime;
+    }
+
+    public void setPendingTime(Integer pendingTime) {
+        this.pendingTime = pendingTime;
     }
 
     public Instant getUpdatedAt() {
