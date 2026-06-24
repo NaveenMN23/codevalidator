@@ -21,6 +21,7 @@
 		<resilience4j.version>2.2.0</resilience4j.version>
 		<logstash-logback.version>8.0</logstash-logback.version>
 		<testcontainers.version>1.20.4</testcontainers.version>
+		<aws-sdk-s3.version>2.29.29</aws-sdk-s3.version>
 	</properties>
 
 	<dependencies>
@@ -124,9 +125,9 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>io.minio</groupId>
-			<artifactId>minio</artifactId>
-			<version>8.5.10</version>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>${aws-sdk-s3.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
