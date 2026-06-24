@@ -6,27 +6,42 @@ import ReactMarkdown from 'react-markdown';
 import { TerminalComponent } from './Terminal';
 import { FileExplorer } from './FileExplorer';
 import { FeedbackDisplay } from './FeedbackDisplay';
-import { getWebContainer } from '../../../lib/webcontainer';
 import {
   Play, Send, RefreshCcw, LayoutGrid, BookOpen,
   ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Terminal as TerminalIcon,
-  RotateCcw, Sparkles, Sun, Moon
+  RotateCcw, Sparkles, Sun, Moon, AlertTriangle
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
-import type { FileSystemTree } from '@webcontainer/api';
-import { fetchChallenge, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge } from '../api';
+import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge } from '../api';
 import type { GradingResult } from '../workspace.types';
 import './Workspace.css';
+
+// Plain in-memory file tree — same shape WebContainer's API used (kept for compatibility
+// with FileExplorer's existing duck-typed rendering), but no longer backed by an actual
+// WebContainer instance; everything here is just React state.
+type FileNode = { file: { contents: string } } | { directory: FileTree };
+type FileTree = Record<string, FileNode>;
+
+// Fast non-cryptographic checksum (FNV-1a) used purely to detect "did the draft actually
+// change since the last save" — not a security primitive, collisions are an acceptable risk.
+function hashFiles(flatFiles: Record<string, string>): string {
+  const serialized = JSON.stringify(flatFiles, Object.keys(flatFiles).sort());
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < serialized.length; i++) {
+    hash ^= serialized.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
 
 export function Workspace() {
   const { challengeId } = useParams<{ challengeId: string }>();
   const navigate = useNavigate();
   const { user, theme, setTheme } = useAppStore();
   
-  const [files, setFiles] = useState<FileSystemTree | null>(null);
+  const [files, setFiles] = useState<FileTree | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [openFiles, setOpenFiles] = useState<string[]>([]);
-  const [webcontainer, setWebcontainer] = useState<any>(null);
   const [terminal, setTerminal] = useState<any>(null);
   const [isBooting, setIsBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -44,6 +59,11 @@ export function Workspace() {
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const terminalInstanceRef = useRef<any>(null);
+  // Hash of the files as they last existed in the draft (either just loaded, or just
+  // saved) — compared locally against the current files before autosaving, so we never
+  // need a network round-trip just to check whether anything actually changed.
+  const lastSavedHashRef = useRef<string | null>(null);
+  const timeLeftRef = useRef(timeLeft);
 
   // Timer logic
   useEffect(() => {
@@ -59,8 +79,8 @@ export function Workspace() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const unflattenFiles = (flatFiles: Record<string, string>): FileSystemTree => {
-    const tree: FileSystemTree = {};
+  const unflattenFiles = (flatFiles: Record<string, string>): FileTree => {
+    const tree: FileTree = {};
     for (const [path, content] of Object.entries(flatFiles)) {
       const parts = path.split('/');
       let current: any = tree;
@@ -105,37 +125,6 @@ export function Workspace() {
     return '';
   };
 
-  const patchContent = (path: string, content: string): string => {
-    let patched = content;
-    // Fix SQLite Bindings by switching to WASM on the fly
-    if (path === 'src/db.ts' && patched.includes('better-sqlite3')) {
-      console.log("Hot-patching src/db.ts to use WASM SQLite...");
-      patched = patched.replace(
-        "import Database from 'better-sqlite3';", 
-        "import initSqlJs from 'sql.js';"
-      );
-      patched = patched.replace(
-        "const db = new Database('database.db');",
-        "// Initialize WASM SQLite\nconst SQL = await initSqlJs();\nconst db = new SQL.Database();"
-      );
-      patched = patched.replace(
-        "database: db,",
-        "database: db as any,"
-      );
-    }
-    if (path === 'package.json' && patched.includes('better-sqlite3')) {
-      console.log("Hot-patching package.json to use WASM SQLite...");
-      patched = patched.replace('"better-sqlite3": "^11.3.0"', '"sql.js": "^1.10.3"');
-      if (!patched.includes('"@types/sql.js"')) {
-        patched = patched.replace(
-          '"@types/better-sqlite3": "^7.6.13"',
-          '"@types/sql.js": "^1.4.9"'
-        );
-      }
-    }
-    return patched;
-  };
-
   // Initialize Workspace
   useEffect(() => {
     async function init() {
@@ -144,34 +133,28 @@ export function Workspace() {
       setBootError(null);
       setIsBooting(true);
       try {
-        // 1. Fetch Challenge Metadata
-        const meta = await fetchChallenge(challengeId);
+        // 1. Fetch Challenge Metadata (fast DB read, no S3) and check for a draft in parallel
+        const [meta, draftData] = await Promise.all([
+          fetchChallenge(challengeId),
+          fetchDraft(challengeId, user.id),
+        ]);
         setChallengeMeta(meta);
 
-        // 2. Try fetching draft
-        const draftData = await fetchDraft(challengeId, user.id);
-        
-        let initialFiles: FileSystemTree | null = null;
+        let initialFiles: FileTree | null = null;
 
-        // 3. If draft exists, unflatten it AND patch it
+        // 2. If draft exists, unflatten it — never touches S3
         if (draftData) {
-          const flatFiles = draftData as Record<string, string>;
-          // Auto-patch existing drafts too!
-          for (const key of Object.keys(flatFiles)) {
-            flatFiles[key] = patchContent(key, flatFiles[key]);
-          }
-          initialFiles = unflattenFiles(flatFiles);
+          initialFiles = unflattenFiles(draftData.files);
+          setTimeLeft(draftData.pendingTime ?? 3600);
         }
 
-        // 4. If no draft, load boilerplate from the challenge's files
+        // 3. If no draft, fetch boilerplate from the challenge's files (S3) — only paid
+        // for first-time visits, since a saved draft skips this entirely.
         if (!initialFiles) {
           console.log("No draft found, loading boilerplate...");
-          if (meta.files && Object.keys(meta.files).length > 0) {
-            const flatFiles: Record<string, string> = { ...meta.files };
-            for (const key of Object.keys(flatFiles)) {
-              flatFiles[key] = patchContent(key, flatFiles[key]);
-            }
-            initialFiles = unflattenFiles(flatFiles);
+          const challengeFiles = await fetchChallengeFiles(challengeId);
+          if (Object.keys(challengeFiles).length > 0) {
+            initialFiles = unflattenFiles(challengeFiles);
           } else {
             // Fallback boilerplate
             initialFiles = {
@@ -181,11 +164,8 @@ export function Workspace() {
           }
         }
 
-        const wc = await getWebContainer();
-        await wc.mount(initialFiles as any);
-        
-        setFiles(initialFiles as FileSystemTree);
-        setWebcontainer(wc);
+        lastSavedHashRef.current = hashFiles(flattenFiles(initialFiles));
+        setFiles(initialFiles as FileTree);
         setIsBooting(false);
 
         if (initialFiles['README.md']) setSelectedFile('README.md');
@@ -209,20 +189,36 @@ export function Workspace() {
     }
   }, [terminal]);
 
+  // Kept in sync so persistDraftIfChanged() always reads the current countdown without
+  // needing timeLeft (which ticks every second) in any effect's dependency array.
+  useEffect(() => {
+    timeLeftRef.current = timeLeft;
+  }, [timeLeft]);
+
+  // Shared by the debounced autosave below AND by Run/Submit (fired-and-forgotten there,
+  // since the draft table is just "resume where you left off" — not on the grading path).
+  const persistDraftIfChanged = async () => {
+    if (!files || !challengeId || !user) return;
+    const flatFiles = flattenFiles(files);
+    const currentHash = hashFiles(flatFiles);
+    if (currentHash === lastSavedHashRef.current) {
+      return; // No actual change since the last save — skip the network round-trip.
+    }
+    try {
+      await saveDraft(challengeId, user.id, flatFiles, timeLeftRef.current);
+      lastSavedHashRef.current = currentHash;
+      console.log("Draft saved");
+    } catch (err) {
+      console.error("Draft save failed", err);
+    }
+  };
+
   // Debounced Auto-Save
   useEffect(() => {
     if (!files || !challengeId || !user) return;
 
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        await saveDraft(challengeId, user.id, flattenFiles(files));
-        console.log("Draft auto-saved");
-      } catch (err) {
-        console.error("Auto-save failed", err);
-      }
-    }, 2000);
+    saveTimeoutRef.current = setTimeout(persistDraftIfChanged, 2000);
 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -232,14 +228,15 @@ export function Workspace() {
   const handleRun = async () => {
     if (!challengeId || !files || isRunning) return;
 
+    persistDraftIfChanged(); // Fire-and-forget — Run already sends files directly, this just checkpoints the draft.
     setIsRunning(true);
     if (terminal) {
       terminal.reset();
       terminal.write('\x1b[36m➤ Sending code to the Execution Service...\x1b[0m\r\n');
     }
     try {
-      // Runs server-side against the real Execution Service container — WebContainers can
-      // only run Node.js in-browser and can't execute a JVM/Maven project at all.
+      // Always runs server-side against the real Execution Service container — these are
+      // Java/Maven challenges, which can't execute client-side in a browser.
       const result = await runChallenge(challengeId, flattenFiles(files));
       terminal?.write(result.stdout.replace(/\n/g, '\r\n'));
       if (result.stderr) terminal?.write(result.stderr.replace(/\n/g, '\r\n'));
@@ -263,6 +260,7 @@ export function Workspace() {
     const confirmed = window.confirm("Are you sure you want to submit your solution? This will be graded.");
     if (!confirmed) return;
 
+    persistDraftIfChanged(); // Fire-and-forget — checkpoints the draft separately from the submissions-table record below.
     setIsSubmitting(true);
     setSubmitStatus('Submitting...');
     try {
@@ -324,8 +322,6 @@ export function Workspace() {
           current = current[part].directory;
         }
       }
-      // Also update in WebContainer
-      webcontainer?.fs.writeFile(path, content);
       return newFiles;
     });
   };
@@ -334,7 +330,7 @@ export function Workspace() {
     if (selectedFile) {
       updateFileContent(selectedFile, value || '');
     }
-  }, [selectedFile, webcontainer]);
+  }, [selectedFile]);
 
   const handleFileSelect = (path: string) => {
     setSelectedFile(path);
@@ -670,8 +666,8 @@ export function Workspace() {
       <div className="h-6 border-t border-border-main bg-background flex items-center px-3 justify-between shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-[9px] font-bold text-text-muted">
-            <div className={`w-1.5 h-1.5 rounded-full ${webcontainer ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.3)]' : 'bg-red-500'}`} />
-            {webcontainer ? 'ENVIRONMENT READY' : 'CONNECTING...'}
+            <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.3)]" />
+            ENVIRONMENT READY
           </div>
           <div className="w-px h-2.5 bg-border-main" />
           <div className="text-[9px] text-text-muted font-mono tracking-tighter uppercase">

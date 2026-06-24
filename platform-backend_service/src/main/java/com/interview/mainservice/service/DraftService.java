@@ -24,12 +24,17 @@ public class DraftService {
         this.objectMapper = objectMapper;
     }
 
-    public Optional<Map<String, String>> getDraft(UUID userId, UUID problemId) {
+    public record DraftData(Map<String, String> files, Integer pendingTime) {
+    }
+
+    public Optional<DraftData> getDraft(UUID userId, UUID problemId) {
         return draftRepository.findByUserIdAndProblemId(userId, problemId)
                 .map(draft -> {
                     if (draft.getFilesJson() == null) return null;
                     try {
-                        return objectMapper.readValue(draft.getFilesJson(), new TypeReference<Map<String, String>>() {});
+                        Map<String, String> files = objectMapper.readValue(
+                                draft.getFilesJson(), new TypeReference<Map<String, String>>() {});
+                        return new DraftData(files, draft.getPendingTime());
                     } catch (JsonProcessingException e) {
                         return null;
                     }
@@ -37,7 +42,7 @@ public class DraftService {
     }
 
     @Transactional
-    public void saveDraft(UUID userId, UUID problemId, Map<String, String> files) {
+    public void saveDraft(UUID userId, UUID problemId, Map<String, String> files, Integer pendingTime) {
         String json;
         try {
             json = objectMapper.writeValueAsString(files);
@@ -47,6 +52,7 @@ public class DraftService {
         Draft draft = draftRepository.findByUserIdAndProblemId(userId, problemId)
                 .orElseGet(() -> new Draft(userId, problemId, ""));
         draft.setFilesJson(json);
+        draft.setPendingTime(pendingTime);
         draftRepository.save(draft);
     }
 
