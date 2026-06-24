@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Backend
     backend_url: str = "http://platform-backend:8080"
 
+    # Postgres (blueprint persistence)
+    postgres_dsn: str = "postgresql://admin:password@localhost:5432/interview_db"
+
     # Local export (dev only — bind-mount path; empty = disabled)
     local_export_path: str = ""
 

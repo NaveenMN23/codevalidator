@@ -95,6 +95,8 @@ public class ProblemManagementService {
         String language = (job.getLanguages() != null && !job.getLanguages().isEmpty())
                 ? job.getLanguages().get(0) : "node";
 
+        Map<String, String> blueprintsBySlug = extractBlueprints(job.getResultJson());
+
         List<Map<String, Object>> scenarios = extractAllScenarios(job.getResultJson(), language);
         if (scenarios.isEmpty()) {
             String slug = uniqueSlug(challengeSlug);
@@ -104,6 +106,8 @@ public class ProblemManagementService {
             p.setLanguage(language);
             p.setTier((tiers != null && !tiers.isEmpty()) ? tiers.get(0) + "-scenario-1" : "easy-scenario-1");
             p.setPublished(true);
+            String bpJson = blueprintsBySlug.get(slug);
+            if (bpJson != null) p.setBlueprint(bpJson);
             return List.of(problemRepository.save(p));
         }
 
@@ -120,9 +124,29 @@ public class ProblemManagementService {
             p.setLanguage(language);
             p.setTier(tag);
             p.setPublished(true);
+            String bpJson = blueprintsBySlug.get(challengeSlug + "-" + tag);
+            if (bpJson != null) p.setBlueprint(bpJson);
             created.add(problemRepository.save(p));
         }
         return created;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> extractBlueprints(String resultJson) {
+        if (resultJson == null) return Map.of();
+        try {
+            Map<String, Object> result = objectMapper.readValue(resultJson, new TypeReference<>() {});
+            Object blueprints = result.get("blueprints");
+            if (!(blueprints instanceof Map<?, ?> bpMap)) return Map.of();
+            Map<String, String> out = new java.util.HashMap<>();
+            for (Map.Entry<?, ?> entry : bpMap.entrySet()) {
+                out.put(String.valueOf(entry.getKey()), objectMapper.writeValueAsString(entry.getValue()));
+            }
+            return out;
+        } catch (Exception e) {
+            log.warn("Could not extract blueprints from resultJson: {}", e.getMessage());
+            return Map.of();
+        }
     }
 
     @SuppressWarnings("unchecked")

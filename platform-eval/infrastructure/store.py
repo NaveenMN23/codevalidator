@@ -9,8 +9,9 @@ from infrastructure.cache import cache_client
 from config.settings import settings
 
 _SESSION_KEY_PREFIX = "eval:session:"
-_MEMORY_STORE: dict[str, dict] = {}   # used when STORE_BACKEND=memory
-_CREATE_TABLE_SQL = """
+_MEMORY_STORE: dict[str, dict] = {}           # used when STORE_BACKEND=memory
+_MEMORY_BLUEPRINT_STORE: dict[str, dict] = {} # used when STORE_BACKEND=memory
+_CREATE_SESSIONS_SQL = """
 CREATE TABLE IF NOT EXISTS eval_sessions (
     id TEXT PRIMARY KEY,
     data JSONB NOT NULL,
@@ -24,14 +25,14 @@ def _session_key(session_id: str) -> str:
 
 
 def init_schema() -> None:
-    """Called on service lifespan startup to ensure the table exists."""
+    """Called on service lifespan startup to ensure the eval_sessions table exists."""
     try:
         with psycopg.connect(settings.postgres_dsn) as conn:
-            conn.execute(_CREATE_TABLE_SQL)
+            conn.execute(_CREATE_SESSIONS_SQL)
             conn.commit()
         log.info("eval_sessions table ready")
     except Exception as e:
-        log.error(f"Failed to init eval_sessions schema: {e}")
+        log.error(f"Failed to init eval schema: {e}")
 
 
 class SessionStore:
@@ -101,6 +102,50 @@ class SessionStore:
         except Exception as e:
             log.error(f"Postgres load failed for session {session_id}: {e}")
 
+        return None
+
+    def save_blueprint(self, problem_id: str, data: dict) -> None:
+        """Write blueprint into problems.blueprint (by slug) and warm Redis cache."""
+        if settings.store_backend == "memory":
+            _MEMORY_BLUEPRINT_STORE[problem_id] = data
+            return
+
+        raw = json.dumps(data)
+        try:
+            with psycopg.connect(settings.postgres_dsn) as conn:
+                cur = conn.execute(
+                    "UPDATE problems SET blueprint = %s::jsonb WHERE slug = %s",
+                    (raw, problem_id),
+                )
+                if cur.rowcount == 0:
+                    log.warning(
+                        f"save_blueprint: no problems row with slug={problem_id!r} — "
+                        f"blueprint not persisted to DB"
+                    )
+                conn.commit()
+        except Exception as e:
+            log.error(f"Postgres save_blueprint failed for {problem_id}: {e}")
+            raise
+
+        try:
+            cache_client.set(f"blueprint:{problem_id}", raw, expire=3600)
+        except Exception as e:
+            log.warning(f"Redis warm failed for blueprint {problem_id}: {e}")
+
+    def load_blueprint(self, problem_id: str) -> dict | None:
+        """Read problems.blueprint by slug. Caller handles Redis caching."""
+        if settings.store_backend == "memory":
+            return _MEMORY_BLUEPRINT_STORE.get(problem_id)
+
+        try:
+            with psycopg.connect(settings.postgres_dsn) as conn:
+                row = conn.execute(
+                    "SELECT blueprint FROM problems WHERE slug = %s", (problem_id,)
+                ).fetchone()
+            if row and row[0] is not None:
+                return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        except Exception as e:
+            log.error(f"Postgres load_blueprint failed for {problem_id}: {e}")
         return None
 
 

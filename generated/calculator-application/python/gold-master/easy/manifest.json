@@ -2,9 +2,9 @@
   "challenge": "calculator-application",
   "language": "python",
   "scenarios": {
-    "easy-perform-calculation": {
-      "title": "Calculator: Perform a Calculation",
-      "description": "The performCalculation() function body is missing. Implement it to execute basic arithmetic operations (addition, subtraction, multiplication, division) based on the input operation type. Handle division by zero and invalid operations.",
+    "easy-addition-operation": {
+      "title": "Calculator: Implement Addition Operation",
+      "description": "The add() function body is missing. Implement it to perform addition of two numbers and store the result.",
       "tier": "easy",
       "type": "implement"
     }

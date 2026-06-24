@@ -115,11 +115,11 @@ def build_code_submission_messages(
 ) -> tuple[str, str]:
     """Returns (system_prompt, user_message) for a CODE_SUBMISSION turn."""
     task = blueprint.get("task", {})
-    rubric = blueprint.get("rubric", "Evaluate correctness and efficiency.")
+    rubric = blueprint.get("evaluation", {}).get("rubric", "Evaluate correctness and efficiency.")
     focus_areas = blueprint.get("followUpContext", {}).get("interviewerFocusAreas", [])
     scale_up = blueprint.get("followUpContext", {}).get("scaleUpDimensions", [])
     expected_complexity = task.get("expectedComplexity", {})
-    common_mistakes = blueprint.get("followUpContext", {}).get("commonMistakes", [])
+    common_mistakes = blueprint.get("evaluation", {}).get("commonMistakes", [])
 
     # System prompt: stable prefix (persona + blueprint + gold-master)
     system_prompt = f"""{_PERSONA}

@@ -18,49 +18,41 @@ Return a single JSON object with exactly these keys:
 ```json
 {
   "task": {
+    "taskType": "FEATURE_IMPLEMENTATION or BUG_FIX",
+    "title": "Short title matching the scenario (e.g. 'Vending Machine: Dispense Product')",
     "description": "Concise description of what the student must implement or fix for this specific scenario. 2-3 sentences.",
     "constraints": [
       "Business rule or constraint the solution must satisfy",
-      "Another constraint (e.g., idempotency, atomicity, time limit)"
+      "Another constraint (e.g., idempotency, atomicity, specific exception to raise)"
     ],
+    "difficulty": "EASY or MEDIUM or HARD",
+    "targetRole": "SDE-1 or SDE-2 or SDE-3",
+    "language": "Java or Python or TypeScript (match the repo language)",
+    "framework": "Spring Boot or FastAPI or Express or similar (match the repo framework)",
     "expectedComplexity": {
       "time": "O(1) or O(n) etc.",
       "space": "O(1) or O(n) etc."
-    }
+    },
+    "concurrencyRequired": false
   },
-  "scope": {
-    "inScope": [
-      "The specific function or file the candidate must implement or fix"
-    ],
-    "outOfScope": [
-      "Adjacent infrastructure or helpers that are already provided and should not be touched"
+  "repo": {
+    "targetFile": "path/to/the/file/the/candidate/must/edit.java",
+    "relevantFiles": [
+      { "path": "src/services/CalculatorService.py", "role": "TARGET" },
+      { "path": "src/controllers/CalculatorController.py", "role": "CALLER" },
+      { "path": "src/exceptions/InvalidOperationException.py", "role": "EXCEPTION" }
     ]
   },
-  "expectedApproaches": [
-    {
-      "label": "Optimal",
-      "description": "Brief description of the preferred approach and why it is best for this scenario"
-    },
-    {
-      "label": "Acceptable",
-      "description": "A valid but less elegant approach that still satisfies the requirements"
-    }
-  ],
-  "repo": {
-    "relevantFiles": [
-      "src/services/cancellation.ts"
-    ],
-    "targetFile": "src/services/cancellation.ts"
-  },
+  "bugMeta": null,
   "evaluation": {
     "senioritySignals": [
-      "Correctly resets seat.is_booked to false after cancellation",
-      "Refunds exactly 10 loyalty points — not 0, not double",
-      "Returns 404 when booking not found, 403 when user mismatch"
+      "Concrete, checkable observation #1 — something a correct solution does that a mediocre one misses",
+      "Concrete, checkable observation #2",
+      "Concrete, checkable observation #3"
     ],
     "commonMistakes": [
-      "Missing seat reset (most common SDE1 gap)",
-      "Not wrapping refund + seat-reset in a transaction"
+      "Real pitfall observed in interviews — what students get wrong most often",
+      "Another common mistake specific to this scenario"
     ],
     "rubric": {
       "correctness": {
@@ -77,22 +69,59 @@ Return a single JSON object with exactly these keys:
       }
     }
   },
-  "interviewFocusArea": "2-3 sentences describing what the interviewer should probe first, which trade-offs to surface, and what distinguishes a senior answer from a junior one in a live session for THIS specific scenario.",
-  "followUpContext": "2-4 sentences describing the key design decisions, trade-offs, and edge cases an interviewer would probe in a follow-up discussion for THIS specific scenario. What separates a junior from a senior answer here?"
+  "followUpContext": {
+    "interviewerFocusAreas": [
+      {
+        "area": "CORRECTNESS",
+        "scope": "Specific correctness concern to probe — e.g. exception ordering, edge case handling"
+      },
+      {
+        "area": "EXTENSIBILITY",
+        "scope": "How would you add a new operation/feature — what changes and why"
+      },
+      {
+        "area": "DESIGN",
+        "scope": "A design gap or improvement that separates junior from senior — e.g. missing persistence, better abstraction"
+      }
+    ],
+    "expectedApproaches": [
+      {
+        "approach": "Brief description of the preferred approach",
+        "tradeoff": "Why it is preferred and what it trades off"
+      },
+      {
+        "approach": "An acceptable but less elegant approach",
+        "tradeoff": "Why it works but is inferior"
+      }
+    ],
+    "knownEdgeCases": [
+      "Specific edge case #1 for this scenario",
+      "Specific edge case #2"
+    ],
+    "scaleUpDimensions": [
+      "A harder version of this problem that tests senior judgment",
+      "Another scale-up direction"
+    ],
+    "followUpIntent": {
+      "type": "EVALUATOR_DECIDES",
+      "hint": "If the candidate did X, probe Y. If they handled X well, jump to Z. Name the concrete branch.",
+      "minimumTimeRemainingSeconds": 600
+    }
+  }
 }
 ```
 
 ## Rules
 
 - `task.description` must describe the SCENARIO-SPECIFIC fix, not the general challenge
-- `scope.inScope` lists only the functions, files, or behaviors the candidate must touch for THIS scenario
-- `scope.outOfScope` explicitly names what is already provided so the interviewer knows not to penalise gaps there
-- `expectedApproaches` must include at least one "Optimal" entry; add an "Acceptable" entry only when multiple valid solution paths exist
-- `repo.relevantFiles` lists only the files the student needs to read or touch to complete THIS scenario
-- `targetFile` is the single most important file — the one containing the primary missing implementation
-- `evaluation.senioritySignals` must be concrete, checkable observations (not generic praise). List 3-5 specific things a correct solution does that a mediocre one misses.
-- `evaluation.commonMistakes` must be real pitfalls observed in actual interviews at this seniority level — things students get wrong most often
-- `evaluation.rubric` anchors scores to observable behaviors so evaluation is consistent across students
-- `interviewFocusArea` must name the specific trade-off or edge case to probe — not generic ("explain your design") but scenario-concrete ("ask why they chose X over Y here")
-- `followUpContext` must be specific to this scenario's implementation challenge (not generic "explain your design choices")
+- `task.difficulty` must be EASY, MEDIUM, or HARD — match the scenario tier
+- `task.language` and `task.framework` must reflect the actual repo language/framework
+- `repo.targetFile` is the single file containing the primary missing implementation
+- `repo.relevantFiles` lists only files the student needs to read or touch — each entry is `{path, role}` where role is TARGET, CALLER, EXCEPTION, SCHEMA, MODEL, DEPENDENCY, or TEST
+- `evaluation.senioritySignals` must be concrete and checkable (not generic praise) — list 3-5 specific things a correct solution does that a mediocre one misses
+- `evaluation.commonMistakes` must be real pitfalls for this specific scenario
+- `evaluation.rubric` anchors scores to observable behaviors for consistent evaluation
+- `followUpContext.interviewerFocusAreas` must have 2-3 entries; each names a specific trade-off or edge case, not generic advice
+- `followUpContext.followUpIntent.hint` must name concrete branches (if candidate did X, probe Y)
+- `bugMeta` is null for FEATURE_IMPLEMENTATION scenarios; populate only for BUG_FIX type
 - Output JSON only. No markdown fences, no explanation text.

@@ -1,20 +1,13 @@
-from src.exceptions.InvalidOperationException import InvalidOperationException
+from src.repositories.CalculationRepository import CalculationRepository
 
-def perform_calculation(operation: str, operand1: float, operand2: float) -> float:
-    """Perform a calculation based on the operation type.
+class CalculatorService:
+    @staticmethod
+    def add(operand1: float, operand2: float) -> float:
+        """Perform addition of two numbers and store the result."""
+        if not isinstance(operand1, (int, float)) or not isinstance(operand2, (int, float)):
+    raise ValueError("Operands must be numbers")
+result = operand1 + operand2
+calculation = Calculation(id=0, operation='add', operand1=operand1, operand2=operand2, result=result)
+CalculationRepository.save(calculation)
+return result
 
-    Supported operations: add, subtract, multiply, divide.
-    Handle division by zero and invalid operations.
-    """
-    if operation == 'add':
-    return operand1 + operand2
-elif operation == 'subtract':
-    return operand1 - operand2
-elif operation == 'multiply':
-    return operand1 * operand2
-elif operation == 'divide':
-    if operand2 == 0:
-        raise ZeroDivisionError("Division by zero is not allowed.")
-    return operand1 / operand2
-else:
-    raise InvalidOperationException(f"Unsupported operation: {operation}")

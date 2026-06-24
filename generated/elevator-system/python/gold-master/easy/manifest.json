@@ -1,0 +1,12 @@
+{
+  "challenge": "elevator-system",
+  "language": "python",
+  "scenarios": {
+    "easy-handle-floor-request": {
+      "title": "Elevator System: Handle Floor Request",
+      "description": "The handle_floor_request() function body is missing. Implement it to add a floor request to the elevator's queue and update its direction.",
+      "tier": "easy",
+      "type": "implement"
+    }
+  }
+}

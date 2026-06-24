@@ -48,6 +48,10 @@ public class Problem {
     @Column(name = "is_published", nullable = false)
     private boolean isPublished = false;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String blueprint;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -105,4 +109,6 @@ public class Problem {
     public void setLanguage(String language) { this.language = language; }
     public String getTier() { return tier; }
     public void setTier(String tier) { this.tier = tier; }
+    public String getBlueprint() { return blueprint; }
+    public void setBlueprint(String blueprint) { this.blueprint = blueprint; }
 }

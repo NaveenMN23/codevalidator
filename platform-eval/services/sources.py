@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 from infrastructure.logger import log
 from infrastructure.cache import cache_client
+from infrastructure.store import session_store
 
 _MAX_TOTAL_BYTES = 50_000   # 50KB total
 _MAX_FILE_BYTES = 20_000    # 20KB per file
@@ -85,15 +86,27 @@ class BlueprintSource:
     """Resolves the blueprint DTO for a given problemId."""
 
     def resolve(self, problem_id: str) -> dict:
-        # Prod: try Redis first
+        # 1. Redis (short-lived read cache — 1 hour TTL)
         cached = cache_client.get(f"blueprint:{problem_id}")
         if cached:
             try:
-                return json.loads(cached)
+                data = json.loads(cached)
+                if isinstance(data, dict):
+                    return data
             except json.JSONDecodeError:
                 pass
 
-        # Dev: local FS
+        # 2. Postgres (primary durable store)
+        row = session_store.load_blueprint(problem_id)
+        if row:
+            log.info(f"Blueprint loaded from Postgres: {problem_id}")
+            try:
+                cache_client.set(f"blueprint:{problem_id}", json.dumps(row), expire=3600)
+            except Exception:
+                pass
+            return row
+
+        # 3. Local FS (dev fallback — backfills Postgres on first load)
         local_paths = [
             _WORKSPACE_ROOT / "blueprint" / f"{problem_id}.json",
             _WORKSPACE_ROOT / "platform-eval" / "blueprint" / f"{problem_id}.json",
@@ -102,13 +115,17 @@ class BlueprintSource:
             if path.exists():
                 log.info(f"Blueprint loaded from local FS: {path}")
                 data = json.loads(path.read_text())
-                # Warm Redis
-                cache_client.set(f"blueprint:{problem_id}", json.dumps(data), expire=86400)
+                try:
+                    session_store.save_blueprint(problem_id, data)
+                    log.info(f"Blueprint backfilled to Postgres from FS: {problem_id}")
+                except Exception as e:
+                    log.warning(f"Postgres backfill failed for {problem_id}: {e}")
                 return data
 
         raise FileNotFoundError(
             f"Blueprint not found for problemId={problem_id}. "
-            f"Check Redis key 'blueprint:{problem_id}' or local FS paths: {local_paths}"
+            f"Check Postgres blueprints table, Redis key 'blueprint:{problem_id}', "
+            f"or local FS paths: {local_paths}"
         )
 
 

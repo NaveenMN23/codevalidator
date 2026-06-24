@@ -139,6 +139,7 @@ services:
       - RABBITMQ_PASSWORD=password
       - CODEGEN_REQUEST_QUEUE=codegen-request-queue
       - CODEGEN_RESULTS_QUEUE=codegen-results-queue
+      - POSTGRES_DSN=postgresql://admin:password@postgres:5432/interview_db
     volumes:
       - ./challenges:/challenges
       - ./generated:/generated
@@ -148,6 +149,7 @@ services:
       - redis
       - rabbitmq
       - execution-service
+      - postgres
 
   platform-eval:
     build: ./platform-eval
@@ -161,7 +163,10 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_DSN=postgresql://admin:password@postgres:5432/interview_db
       - SESSION_TTL_SECONDS=5400
+      - STORE_BACKEND=postgres
       - ENABLE_LLM=${ENABLE_LLM:-true}
+    volumes:
+      - ./platform-eval/blueprint:/blueprint:ro
     depends_on:
       postgres:
         condition: service_healthy

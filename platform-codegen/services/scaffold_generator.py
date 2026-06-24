@@ -209,6 +209,7 @@ class ScaffoldGenerator:
         all_manifests: dict[str, dict] = {}
         failed_scaffolds: list[str] = []
         failed_blueprints: list[str] = []
+        generated_blueprints: dict[str, dict] = {}
 
         for language in active_languages:
             log.info(f"ScaffoldGenerator: Phase 2 start — language={language}")
@@ -364,9 +365,10 @@ class ScaffoldGenerator:
                 try:
                     from services.blueprint import blueprint_service
                     blueprints = blueprint_service.generate_all_scenarios(challenge_name, language, manifest)
-                    for blueprint in blueprints:
-                        blueprint_service.dispatch(blueprint)
-                    log.info(f"ScaffoldGenerator: Dispatched {len(blueprints)} blueprints for lang={language}")
+                    for bp in blueprints:
+                        blueprint_service.dispatch(bp)  # best-effort: succeeds if problem row already exists
+                        generated_blueprints[bp["problemId"]] = bp
+                    log.info(f"ScaffoldGenerator: Generated {len(blueprints)} blueprints for lang={language}")
                 except Exception as e:
                     log.error(f"ScaffoldGenerator: Blueprint generation failed for lang={language}: {e}")
                     failed_blueprints.append(language)
@@ -391,6 +393,7 @@ class ScaffoldGenerator:
             "tiers": active_tiers,
             "scenarios_per_tier": scenarios_per_tier,
             "manifests": all_manifests,
+            "blueprints": generated_blueprints,
             "usage": {
                 "input_tokens": tok["input"],
                 "cached_tokens": tok["cached"],
