@@ -6,8 +6,6 @@ import com.interview.mainservice.dto.ProblemSummaryResponse;
 import com.interview.mainservice.model.Problem;
 import com.interview.mainservice.repository.ProblemRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.minio.GetObjectArgs;
-import io.minio.MinioClient;
 import java.io.InputStream;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -18,23 +16,29 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 
 @Service
 public class ProblemService {
 
-    private final ProblemRepository problemRepository;
-    private final MinioClient minioClient;
+    private static final Logger log = LoggerFactory.getLogger(ProblemService.class);
 
-    @Value("${app.minio.challenges-bucket:challenges}")
+    private final ProblemRepository problemRepository;
+    private final S3Client s3Client;
+
+    @Value("${app.aws.s3.challenges-bucket}")
     private String challengesBucket;
 
-    public ProblemService(ProblemRepository problemRepository, MinioClient minioClient) {
+    public ProblemService(ProblemRepository problemRepository, S3Client s3Client) {
         this.problemRepository = problemRepository;
-        this.minioClient = minioClient;
+        this.s3Client = s3Client;
     }
 
     @CircuitBreaker(name = "database")
@@ -64,19 +68,14 @@ public class ProblemService {
     }
 
     private Map<String, String> fetchChallengeFiles(Problem problem) {
-        String language = problem.getLanguage();
-        if (language == null || problem.getSlug() == null) {
+        String s3Key = problem.getProblemLink();
+        if (s3Key == null || s3Key.isBlank()) {
             return Map.of();
         }
 
-        // Slug already encodes the full path: {challenge}-{scenario_key}
-        // e.g. "vending-machine-system-easy-restock-product"
-        // Codegen stores ZIPs as: {language}/{challenge}-{scenario_key}.zip
-        String s3Key = language + "/" + problem.getSlug() + ".zip";
-
         Map<String, String> files = new LinkedHashMap<>();
-        try (InputStream stream = minioClient.getObject(
-                GetObjectArgs.builder().bucket(challengesBucket).object(s3Key).build());
+        try (InputStream stream = s3Client.getObject(
+                GetObjectRequest.builder().bucket(challengesBucket).key(s3Key).build());
              ZipInputStream zip = new ZipInputStream(stream)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
@@ -85,6 +84,8 @@ public class ProblemService {
                 }
             }
         } catch (Exception e) {
+            log.error("Failed to fetch challenge files for problem {} (bucket={}, key={}): {}",
+                    problem.getId(), challengesBucket, s3Key, e.getMessage());
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Challenge files not available — failed to read from storage: " + e.getMessage());
         }

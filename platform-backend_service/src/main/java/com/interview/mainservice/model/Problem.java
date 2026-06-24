@@ -38,11 +38,6 @@ public class Problem {
     @Column(name = "problem_link", nullable = false)
     private String problemLink;
 
-    // Which gold-master tier/scenario this problem maps to (e.g. "beginner-divide-by-zero") —
-    // used by Submit to fetch the matching hidden test from the gold-masters S3 bucket.
-    @Column
-    private String tier;
-
     @Column
     private String language;
 
@@ -63,7 +58,7 @@ public class Problem {
     }
 
     public static Problem create(String slug, String title, String description, Difficulty difficulty,
-                                  String problemLink, List<String> tags, String tier) {
+                                  String problemLink, List<String> tags) {
         Problem problem = new Problem();
         problem.slug = slug;
         problem.title = title;
@@ -71,7 +66,6 @@ public class Problem {
         problem.difficulty = difficulty;
         problem.problemLink = problemLink;
         problem.tags = tags;
-        problem.tier = tier;
         return problem;
     }
 
@@ -112,10 +106,6 @@ public class Problem {
 
     public String getProblemLink() {
         return problemLink;
-    }
-
-    public String getTier() {
-        return tier;
     }
 
     public String getLanguage() {

@@ -5,6 +5,8 @@ import com.interview.mainservice.dto.RunResponse;
 import com.interview.mainservice.service.RunService;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,6 +21,8 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/v1/problems")
 public class RunController {
+
+    private static final Logger log = LoggerFactory.getLogger(RunController.class);
 
     private final RunService runService;
     private final ExecutorService executionServiceExecutor;
@@ -44,6 +48,7 @@ public class RunController {
             } catch (ResponseStatusException e) {
                 deferredResult.setResult(ResponseEntity.status(e.getStatusCode()).build());
             } catch (Exception e) {
+                log.error("Run failed for problem {}: {}", problemId, e.getMessage());
                 deferredResult.setResult(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
             }
         });

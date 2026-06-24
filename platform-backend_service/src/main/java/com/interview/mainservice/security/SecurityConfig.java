@@ -1,5 +1,7 @@
 package com.interview.mainservice.security;
 
+import com.interview.mainservice.logging.RequestLoggingFilter;
+import com.interview.mainservice.logging.TraceIdFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,7 +25,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter)
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                     JwtAuthenticationFilter jwtAuthenticationFilter,
+                                                     RequestLoggingFilter requestLoggingFilter,
+                                                     TraceIdFilter traceIdFilter)
             throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -41,7 +46,9 @@ public class SecurityConfig {
                         authorize.anyRequest().permitAll();
                     }
                 })
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(requestLoggingFilter, JwtAuthenticationFilter.class)
+                .addFilterBefore(traceIdFilter, RequestLoggingFilter.class);
         return http.build();
     }
 }

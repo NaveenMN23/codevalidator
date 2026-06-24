@@ -31,17 +31,11 @@ public class SubmitService {
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
 
-        String tier = problem.getTier();
-        if (tier == null || tier.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Problem has no tier configured — cannot locate its hidden test");
-        }
-
         // Same session id as Run — reuses the session's warm container rather than a fresh one.
         String language = problem.getLanguage() != null ? problem.getLanguage() : DEFAULT_LANGUAGE;
         String sessionId = SessionIdentifier.of(userId, problemId);
         try {
-            return executionServiceClient.submit(sessionId, problem.getSlug(), tier, language,
+            return executionServiceClient.submit(sessionId, problem.getSlug(), null, language,
                     request.files(), SUBMIT_COMMAND);
         } catch (BulkheadFullException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,

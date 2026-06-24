@@ -96,9 +96,10 @@ services:
       SPRING_RABBITMQ_USERNAME: admin
       SPRING_RABBITMQ_PASSWORD: password
       EXECUTION_SERVICE_URL: http://execution-service:8001
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: admin
-      MINIO_SECRET_KEY: password
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-2}
+      AWS_S3_CHALLENGES_BUCKET: ${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
       SECURITY_AUTH_ENABLED: "false"
     depends_on:
       postgres:

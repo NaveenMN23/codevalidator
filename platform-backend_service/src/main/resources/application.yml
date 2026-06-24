@@ -25,11 +25,9 @@ app:
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
   execution-service:
     base-url: ${EXECUTION_SERVICE_URL:http://localhost:8001}
-  minio:
-    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-    access-key: ${MINIO_ACCESS_KEY:admin}
-    secret-key: ${MINIO_SECRET_KEY:password}
-    challenges-bucket: ${MINIO_CHALLENGES_BUCKET:challenges}
+  aws:
+    s3:
+      challenges-bucket: ${AWS_S3_CHALLENGES_BUCKET:challenges-repo}
   grading-queue: ${GRADING_QUEUE:grading-queue}
 
 management:

@@ -7,10 +7,10 @@ import { TerminalComponent } from './Terminal';
 import { FileExplorer } from './FileExplorer';
 import { FeedbackDisplay } from './FeedbackDisplay';
 import { getWebContainer } from '../../../lib/webcontainer';
-import { 
-  Play, Send, RefreshCcw, LayoutGrid, BookOpen, 
+import {
+  Play, Send, RefreshCcw, LayoutGrid, BookOpen,
   ArrowLeft, ChevronUp, ChevronDown, Terminal as TerminalIcon,
-  RotateCcw, Sparkles
+  RotateCcw, Sparkles, AlertTriangle
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
 import type { FileSystemTree } from '@webcontainer/api';
@@ -28,6 +28,8 @@ export function Workspace() {
   const [webcontainer, setWebcontainer] = useState<any>(null);
   const [terminal, setTerminal] = useState<any>(null);
   const [isBooting, setIsBooting] = useState(true);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [bootRetryKey, setBootRetryKey] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
@@ -136,7 +138,9 @@ export function Workspace() {
   useEffect(() => {
     async function init() {
       if (!challengeId || !user) return;
-      
+
+      setBootError(null);
+      setIsBooting(true);
       try {
         // 1. Fetch Challenge Metadata
         const meta = await fetchChallenge(challengeId);
@@ -189,10 +193,12 @@ export function Workspace() {
         terminalInstanceRef.current?.write('\r\n\x1b[32m✔ Environment is ready! Click "Run Tests" to execute.\x1b[0m\r\n');
       } catch (err) {
         console.error("Failed to boot IDE", err);
+        setBootError(err instanceof Error ? err.message : 'Failed to load this challenge.');
+        setIsBooting(false);
       }
     }
     init();
-  }, [challengeId, user]);
+  }, [challengeId, user, bootRetryKey]);
 
   // Handle terminal readiness
   useEffect(() => {
@@ -333,6 +339,25 @@ export function Workspace() {
       setActiveLeftTab('feedback');
     }
   }, [gradingResult]);
+
+  if (bootError) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background text-text-muted">
+        <div className="flex flex-col items-center gap-4 max-w-md text-center">
+          <AlertTriangle className="text-red-500" size={40} />
+          <p className="text-text-main font-medium">Couldn't load this challenge</p>
+          <p className="text-sm">{bootError}</p>
+          <button
+            onClick={() => setBootRetryKey((k) => k + 1)}
+            className="flex items-center gap-2 px-4 py-2 rounded bg-primary text-white hover:opacity-90 transition-opacity"
+          >
+            <RotateCcw size={16} />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isBooting) {
     return (
