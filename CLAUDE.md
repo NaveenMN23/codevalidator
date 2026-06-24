@@ -8,6 +8,7 @@ This file provides instructions for Claude-based AI agents working on the Scalab
     *   `platform-backend` (Java) handles business logic and orchestration.
     *   `platform-codegen` (Python) handles asset generation and caching.
     *   Communication between them MUST remain asynchronous via **RabbitMQ**.
+    *   **Exception — `platform-eval`:** The AI interview evaluation service uses **synchronous REST** (`/eval/submit`, `/eval/answer`, `/eval/session/{id}`). This is a deliberate, documented exception: an interactive human-in-the-loop interviewer has the opposite shape from fire-and-forget grading and cannot use an async queue.
 
 2.  **Resilience (Transient Error Handling):**
     *   **Java:** Use `spring-retry` for DB/RabbitMQ. Standard: 3 attempts, exponential backoff (initial: 1s, multiplier: 2.0).

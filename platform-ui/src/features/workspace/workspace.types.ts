@@ -21,7 +21,13 @@ export interface SubmissionRequest {
 
 export interface GradingResult {
   id: string;
-  status: 'COMPLETED' | 'FAILED';
+  status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'TIMEOUT';
   score: number | null;
   logs: string | null;
+  feedback?: {
+    correctness: { finding: string; score: number };
+    efficiency: { finding: string; score: number };
+    followUp: { type: 'IMPLEMENTATION' | 'CONVERSATIONAL'; content: string };
+    summary: string;
+  };
 }

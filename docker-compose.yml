@@ -149,6 +149,25 @@ services:
       - rabbitmq
       - execution-service
 
+  platform-eval:
+    build: ./platform-eval
+    container_name: platform_eval
+    ports:
+      - "8002:8002"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=gpt-4o-mini
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_DSN=postgresql://admin:password@postgres:5432/interview_db
+      - SESSION_TTL_SECONDS=5400
+      - ENABLE_LLM=${ENABLE_LLM:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   admin-backend:
     build: ./admin-backend
     container_name: interview_admin_backend

@@ -23,22 +23,22 @@
   --text-main: #0f172a;
   --text-muted: #6b7280;
   --border-main: #e5e7eb;
-  --accent-color: #2563eb;
-  --terminal-selection-bg: rgba(37, 99, 235, 0.2);
+  --accent-color: #000000;
+  --terminal-selection-bg: rgba(0, 0, 0, 0.15);
 
   color-scheme: light;
 }
 
 [data-theme='dark'] {
-  /* Dark Mode — deep neutral (mirrors admin-ui) */
-  --bg-main: #0f0f17;
-  --bg-panel: #16161f;
-  --bg-elevated: #1c1c28;
-  --text-main: #f1f5f9;
-  --text-muted: #94a3b8;
-  --border-main: #2d2d3d;
-  --accent-color: #6366f1;
-  --terminal-selection-bg: rgba(99, 102, 241, 0.2);
+  /* Dark Mode — VS Code palette */
+  --bg-main: #1e1e1e;
+  --bg-panel: #252526;
+  --bg-elevated: #2d2d2d;
+  --text-main: #cccccc;
+  --text-muted: #858585;
+  --border-main: #3e3e42;
+  --accent-color: #ffffff;
+  --terminal-selection-bg: rgba(255, 255, 255, 0.15);
 
   color-scheme: dark;
 }
