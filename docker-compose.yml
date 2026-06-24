@@ -189,24 +189,6 @@ services:
     depends_on:
       - backend
 
-  # Builds the Node.js executor image with all challenge deps at /preinstalled_modules.
-  # Not yet consumed by anything (execution-service only supports Java so far) — kept
-  # ready for when Node support is added there.
-  node-deps-init:
-    build:
-      context: ./platform-execution_service/executors/node
-    image: platform/node-executor:latest
-    command: echo "Node.js executor image ready"
-
-  # Builds the Python executor image with all challenge deps baked in. Not yet consumed
-  # by anything (execution-service only supports Java so far) — kept ready for when
-  # Python support is added there.
-  python-executor-build:
-    build:
-      context: ./platform-execution_service/executors/python
-    image: platform/python-executor:latest
-    command: echo "Python executor image built"
-
   # Builds the Java executor image with the base Spring Boot dependency tree
   # baked into the local Maven repo via `mvn dependency:go-offline`.
   java-executor-build:
