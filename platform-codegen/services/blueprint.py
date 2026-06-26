@@ -75,6 +75,7 @@ class BlueprintService:
         scenario_tag: str,
         source_files: dict | None = None,
         manifest: dict | None = None,
+        gold_master_s3_ref: str | None = None,
     ) -> dict:
         """Generate a scenario-specific blueprint.
 
@@ -109,8 +110,10 @@ class BlueprintService:
         raw = llm_client.complete_json_cached(system, user, label=f"blueprint:{scenario_tag}")
         blueprint = json.loads(raw)
         blueprint["problemId"] = problem_id
+        if gold_master_s3_ref:
+            blueprint["goldMasterRef"] = gold_master_s3_ref
 
-        blueprint = self._embed_gold_master_source(blueprint, source_files)
+        blueprint = self._embed_gold_master_source(blueprint, source_files or {})
         return blueprint
 
     def generate_all_scenarios(
@@ -119,11 +122,16 @@ class BlueprintService:
         language: str,
         manifest: dict,
         problem_id: str | None = None,
+        gold_master_s3_refs: dict[str, str] | None = None,
     ) -> list[dict]:
         """Generate one blueprint per scenario in the manifest.
 
         Fetches gold master source once per tier (3 MinIO calls for 9 scenarios).
         Within a tier, all N blueprint calls share the same source context — prefix cache hit.
+
+        gold_master_s3_refs: optional {tier: "s3://gold-masters/{lang}/{name}-{tier}.zip"}
+            passed in from scaffold_generator so blueprints carry goldMasterRef without
+            an extra S3 round-trip.
         """
         blueprints = []
         tiers_fetched: dict[str, dict] = {}
@@ -144,10 +152,12 @@ class BlueprintService:
                 continue
 
             pid = problem_id or f"{challenge_name}-{scenario_tag}"
+            gm_ref = (gold_master_s3_refs or {}).get(tier)
             bp = self.generate_for_scenario(
                 pid, challenge_name, language, scenario_tag,
                 source_files=source_files,
                 manifest=manifest,
+                gold_master_s3_ref=gm_ref,
             )
             blueprints.append(bp)
 

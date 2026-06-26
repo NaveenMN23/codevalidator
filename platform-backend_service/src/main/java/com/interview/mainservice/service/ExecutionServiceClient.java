@@ -1,6 +1,7 @@
 package com.interview.mainservice.service;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.mainservice.dto.RunResponse;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
@@ -55,7 +56,7 @@ public class ExecutionServiceClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                return new RunResponse(false, "", "Execution Service returned HTTP " + response.statusCode(), -1);
+                return new RunResponse(false, "", extractDetail(response.body(), response.statusCode()), -1);
             }
 
             ExecuteResponseBody parsed = objectMapper.readValue(response.body(), ExecuteResponseBody.class);
@@ -88,7 +89,7 @@ public class ExecutionServiceClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                return new RunResponse(false, "", "Execution Service returned HTTP " + response.statusCode(), -1);
+                return new RunResponse(false, "", extractDetail(response.body(), response.statusCode()), -1);
             }
 
             ExecuteResponseBody parsed = objectMapper.readValue(response.body(), ExecuteResponseBody.class);
@@ -99,6 +100,14 @@ public class ExecutionServiceClient {
             Thread.currentThread().interrupt();
             return new RunResponse(false, "", "Execution interrupted", -1);
         }
+    }
+
+    private String extractDetail(String body, int statusCode) {
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            if (node.has("detail")) return node.get("detail").asText();
+        } catch (Exception ignored) {}
+        return "Execution Service error (HTTP " + statusCode + ")";
     }
 
     private record ExecuteRequestBody(String sessionId, String challengeId, String language,

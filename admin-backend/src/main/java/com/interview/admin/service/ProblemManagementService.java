@@ -31,10 +31,12 @@ public class ProblemManagementService {
 
     private final ProblemRepository problemRepository;
     private final ObjectMapper objectMapper;
+    private final DockerImageService dockerImageService;
 
-    public ProblemManagementService(ProblemRepository problemRepository, ObjectMapper objectMapper) {
+    public ProblemManagementService(ProblemRepository problemRepository, ObjectMapper objectMapper, DockerImageService dockerImageService) {
         this.problemRepository = problemRepository;
         this.objectMapper = objectMapper;
+        this.dockerImageService = dockerImageService;
     }
 
     @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
@@ -91,7 +93,6 @@ public class ProblemManagementService {
         String domain = extractDomain(job.getDesignJson());
         List<String> tiers = job.getTiers();
         List<String> tags = buildTags(domain, job.getLanguages());
-        String problemLink = "/challenges/" + challengeSlug;
         String language = (job.getLanguages() != null && !job.getLanguages().isEmpty())
                 ? job.getLanguages().get(0) : "node";
 
@@ -101,6 +102,8 @@ public class ProblemManagementService {
         if (scenarios.isEmpty()) {
             String slug = uniqueSlug(challengeSlug);
             String difficulty = (tiers != null && !tiers.isEmpty()) ? tiers.get(0).toUpperCase() : "EASY";
+            // S3 key format: {language}/{slug}.zip — must match what StorageClient uploads
+            String problemLink = language.toLowerCase() + "/" + slug + ".zip";
             Problem p = Problem.create(slug, toTitleCase(slug.replace('-', ' ')), description, difficulty, problemLink, tags);
             p.setTiers(tiers != null ? tiers : List.of());
             p.setLanguage(language);
@@ -119,6 +122,7 @@ public class ProblemManagementService {
             String difficulty = tierStr.toUpperCase();
             String slug = uniqueSlug(challengeSlug + "-" + tag);
             String title = toTitleCase(slug.replace('-', ' '));
+            String problemLink = language.toLowerCase() + "/" + slug + ".zip";
             Problem p = Problem.create(slug, title, description, difficulty, problemLink, tags);
             p.setTiers(tiers != null ? tiers : List.of());
             p.setLanguage(language);
@@ -252,5 +256,11 @@ public class ProblemManagementService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
         problem.setPublished(published);
         return ProblemResponse.from(problemRepository.save(problem));
+    }
+
+    public void buildImage(UUID id) {
+        Problem problem = problemRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
+        dockerImageService.buildAndPush(problem.getSlug(), problem.getLanguage(), problem.getProblemLink());
     }
 }

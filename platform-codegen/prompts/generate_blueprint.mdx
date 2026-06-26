@@ -9,7 +9,7 @@ You are a senior software engineering interviewer who has just reviewed a candid
 
 Given the gold master source code (the fully working reference implementation) and a specific scenario description, produce a structured **Problem Blueprint** that will be used to evaluate candidate submissions for that scenario.
 
-The blueprint must be scenario-specific — every field must be tailored to what the student in THIS scenario was asked to fix or implement.
+The blueprint is the AI interviewer's briefing document. Every field must be tailored to THIS scenario — no generic advice, no copy-paste from the task description.
 
 ## Output Schema
 
@@ -18,93 +18,110 @@ Return a single JSON object with exactly these keys:
 ```json
 {
   "task": {
-    "taskType": "FEATURE_IMPLEMENTATION or BUG_FIX",
-    "title": "Short title matching the scenario (e.g. 'Vending Machine: Dispense Product')",
-    "description": "Concise description of what the student must implement or fix for this specific scenario. 2-3 sentences.",
-    "constraints": [
-      "Business rule or constraint the solution must satisfy",
-      "Another constraint (e.g., idempotency, atomicity, specific exception to raise)"
-    ],
+    "title": "Short display title matching the scenario (e.g. 'Calculator: Perform a Calculation')",
+    "description": "Concise description of what the student must implement or fix for this specific scenario. 2-3 sentences. Name the specific function/method and the expected behaviour.",
     "difficulty": "EASY or MEDIUM or HARD",
-    "targetRole": "SDE-1 or SDE-2 or SDE-3",
     "language": "Java or Python or TypeScript (match the repo language)",
-    "framework": "Spring Boot or FastAPI or Express or similar (match the repo framework)",
+    "constraints": [
+      "Must-satisfy rule #1 — be specific (e.g. 'Division by zero must raise ZeroDivisionError, not return 0')",
+      "Must-satisfy rule #2 — name the exact exception class, method, or data structure required"
+    ],
     "expectedComplexity": {
       "time": "O(1) or O(n) etc.",
       "space": "O(1) or O(n) etc."
-    },
-    "concurrencyRequired": false
+    }
   },
   "repo": {
-    "targetFile": "path/to/the/file/the/candidate/must/edit.java",
     "relevantFiles": [
       { "path": "src/services/CalculatorService.py", "role": "TARGET" },
-      { "path": "src/controllers/CalculatorController.py", "role": "CALLER" },
-      { "path": "src/exceptions/InvalidOperationException.py", "role": "EXCEPTION" }
+      { "path": "src/controllers/CalculatorController.py", "role": "REFERENCE" },
+      { "path": "src/exceptions/InvalidOperationException.py", "role": "REFERENCE" }
     ]
   },
-  "bugMeta": null,
   "evaluation": {
-    "senioritySignals": [
-      "Concrete, checkable observation #1 — something a correct solution does that a mediocre one misses",
-      "Concrete, checkable observation #2",
-      "Concrete, checkable observation #3"
-    ],
-    "commonMistakes": [
-      "Real pitfall observed in interviews — what students get wrong most often",
-      "Another common mistake specific to this scenario"
-    ],
     "rubric": {
       "correctness": {
-        "9-10": "All scenarios handled including edge cases; code matches gold master logic",
-        "7-8": "Happy path + obvious edge cases handled; one minor gap",
-        "4-6": "Basic logic present but missing 1-2 critical requirements from the task",
-        "1-3": "Fundamental approach is wrong, or the implementation is significantly incomplete"
+        "9-10": "Scenario-specific: what an excellent solution does (all edge cases, correct exception types, matches gold master logic)",
+        "7-8": "Happy path + obvious edge cases; one minor gap (name the specific gap)",
+        "4-6": "Basic logic present but missing 1-2 critical requirements (name them)",
+        "1-3": "Fundamental approach wrong, or implementation significantly incomplete"
       },
       "efficiency": {
-        "9-10": "Optimal design; student explicitly considered trade-offs",
+        "9-10": "Optimal design for this problem; student shows awareness of trade-offs",
         "7-8": "Working solution; minor inefficiency that would not matter in production",
-        "4-6": "Naive approach that works but would not scale or shows poor judgment",
-        "1-3": "Ignores efficiency entirely or introduces obvious anti-patterns"
+        "4-6": "Naive approach that works but shows poor judgment for this domain",
+        "1-3": "Introduces anti-patterns or unnecessary complexity"
       }
-    }
+    },
+    "senioritySignals": [
+      "Concrete, checkable observation #1 — something a correct senior solution does that a junior misses (e.g. 'uses elif not bare if')",
+      "Concrete, checkable observation #2 — name the exact class/method/pattern",
+      "Concrete, checkable observation #3",
+      "Concrete, checkable observation #4 (optional)"
+    ],
+    "commonMistakes": [
+      "Real pitfall #1 specific to this scenario — what candidates get wrong most (be concrete, name the symptom)",
+      "Real pitfall #2 — another common gap"
+    ]
   },
   "followUpContext": {
     "interviewerFocusAreas": [
       {
         "area": "CORRECTNESS",
-        "scope": "Specific correctness concern to probe — e.g. exception ordering, edge case handling"
-      },
-      {
-        "area": "EXTENSIBILITY",
-        "scope": "How would you add a new operation/feature — what changes and why"
+        "scope": "Specific correctness concern — name the exact edge case or requirement to probe",
+        "probeQuestion": "The exact question to ask the candidate to surface this concern",
+        "goodAnswerIndicator": "What a strong answer looks like — one sentence"
       },
       {
         "area": "DESIGN",
-        "scope": "A design gap or improvement that separates junior from senior — e.g. missing persistence, better abstraction"
+        "scope": "A design gap or improvement that separates junior from senior",
+        "probeQuestion": "The exact question to ask",
+        "goodAnswerIndicator": "What a strong answer looks like"
+      },
+      {
+        "area": "EXTENSIBILITY",
+        "scope": "How would you extend this — name the specific change to evaluate",
+        "probeQuestion": "The exact question to ask",
+        "goodAnswerIndicator": "What a strong answer looks like"
       }
     ],
     "expectedApproaches": [
       {
-        "approach": "Brief description of the preferred approach",
-        "tradeoff": "Why it is preferred and what it trades off"
+        "approach": "Description of the preferred approach (e.g. 'if/elif/else chain')",
+        "tradeoff": "Why it is preferred and what it costs",
+        "rating": "Expected score range, e.g. '8-10'"
       },
       {
         "approach": "An acceptable but less elegant approach",
-        "tradeoff": "Why it works but is inferior"
+        "tradeoff": "Why it works but is inferior",
+        "rating": "Expected score range, e.g. '5-7'"
       }
     ],
     "knownEdgeCases": [
-      "Specific edge case #1 for this scenario",
-      "Specific edge case #2"
+      {
+        "case": "Specific edge case scenario (e.g. 'operand2 = 0 with operation = divide')",
+        "expectedHandling": "What a correct solution does for this case",
+        "followUpIfMissed": "Exact question to ask if the candidate missed this — or null if not critical"
+      },
+      {
+        "case": "Another specific edge case",
+        "expectedHandling": "Expected correct behaviour",
+        "followUpIfMissed": "Exact question to ask, or null"
+      }
     ],
     "scaleUpDimensions": [
-      "A harder version of this problem that tests senior judgment",
-      "Another scale-up direction"
+      {
+        "dimension": "A harder version of this problem that tests senior judgment — be specific about what changes",
+        "triggerCondition": "When to use this — what the candidate must have done first (e.g. 'solved cleanly and answered extensibility question well')"
+      },
+      {
+        "dimension": "Another scale-up direction",
+        "triggerCondition": "When to use this"
+      }
     ],
     "followUpIntent": {
       "type": "EVALUATOR_DECIDES",
-      "hint": "If the candidate did X, probe Y. If they handled X well, jump to Z. Name the concrete branch.",
+      "hint": "Concrete branching logic: if candidate missed X, consolidate there first. If they got everything right, escalate to Y. If time < N min, quick-probe on Z only.",
       "minimumTimeRemainingSeconds": 600
     }
   }
@@ -113,15 +130,15 @@ Return a single JSON object with exactly these keys:
 
 ## Rules
 
-- `task.description` must describe the SCENARIO-SPECIFIC fix, not the general challenge
+- `task.description` must describe the SCENARIO-SPECIFIC task, not the general challenge
 - `task.difficulty` must be EASY, MEDIUM, or HARD — match the scenario tier
-- `task.language` and `task.framework` must reflect the actual repo language/framework
-- `repo.targetFile` is the single file containing the primary missing implementation
-- `repo.relevantFiles` lists only files the student needs to read or touch — each entry is `{path, role}` where role is TARGET, CALLER, EXCEPTION, SCHEMA, MODEL, DEPENDENCY, or TEST
-- `evaluation.senioritySignals` must be concrete and checkable (not generic praise) — list 3-5 specific things a correct solution does that a mediocre one misses
-- `evaluation.commonMistakes` must be real pitfalls for this specific scenario
-- `evaluation.rubric` anchors scores to observable behaviors for consistent evaluation
-- `followUpContext.interviewerFocusAreas` must have 2-3 entries; each names a specific trade-off or edge case, not generic advice
+- `task.language` must reflect the actual repo language
+- `repo.relevantFiles` lists only files the student needs to read or touch — role is TARGET (file to edit) or REFERENCE (context-only). List multiple TARGET files for multi-file scenarios.
+- `evaluation.rubric` score bands must reference observable behaviours for THIS scenario — not generic advice
+- `evaluation.senioritySignals` must be concrete and checkable — list 3-5 specific things that separate a strong submission from a weak one
+- `evaluation.commonMistakes` must be real pitfalls for THIS specific scenario, not generic coding advice
+- `followUpContext.interviewerFocusAreas` must have 2-3 entries; each must include a `probeQuestion` the AI can ask verbatim
+- `followUpContext.knownEdgeCases` items are objects — each must have `case`, `expectedHandling`, and `followUpIfMissed` (can be null for non-critical cases)
+- `followUpContext.scaleUpDimensions` items are objects — each must include a `triggerCondition` so the AI knows when to escalate
 - `followUpContext.followUpIntent.hint` must name concrete branches (if candidate did X, probe Y)
-- `bugMeta` is null for FEATURE_IMPLEMENTATION scenarios; populate only for BUG_FIX type
 - Output JSON only. No markdown fences, no explanation text.

@@ -32,15 +32,18 @@ public class GenerationService {
     private final CodegenRequestPublisher publisher;
     private final ObjectMapper objectMapper;
     private final ProblemManagementService problemService;
+    private final DockerImageService dockerImageService;
 
     public GenerationService(GenerationJobRepository jobRepository,
                               CodegenRequestPublisher publisher,
                               ObjectMapper objectMapper,
-                              ProblemManagementService problemService) {
+                              ProblemManagementService problemService,
+                              DockerImageService dockerImageService) {
         this.jobRepository = jobRepository;
         this.publisher = publisher;
         this.objectMapper = objectMapper;
         this.problemService = problemService;
+        this.dockerImageService = dockerImageService;
     }
 
     @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
@@ -175,6 +178,9 @@ public class GenerationService {
                         if (!problems.isEmpty()) {
                             job.setProblemId(problems.get(0).getId());
                             log.info("Created {} problems from generation job {}", problems.size(), jobId);
+                            problems.forEach(p ->
+                                dockerImageService.buildAndPush(p.getSlug(), p.getLanguage(), p.getProblemLink())
+                            );
                         }
                     } catch (Exception e) {
                         log.error("Failed to create problem from job {}: {}", jobId, e.getMessage(), e);

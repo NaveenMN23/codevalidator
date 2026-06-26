@@ -1,2 +1,0 @@
-class InvalidOperationException(Exception):
-    pass

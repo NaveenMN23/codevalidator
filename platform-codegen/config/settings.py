@@ -14,11 +14,10 @@ class Settings(BaseSettings):
     redis_host: str = "localhost"
     redis_port: int = 6379
 
-    # MinIO / S3
-    minio_endpoint: str = "http://localhost:9000"
-    minio_access_key: str = "admin"
-    minio_secret_key: str = "password"
-    minio_bucket: str = "challenges"
+    # Storage — AWS S3 (boto3 default credential chain: env vars → IAM role)
+    aws_s3_challenges_bucket: str = "challenges-repo"  # maps to AWS_S3_CHALLENGES_BUCKET
+    gold_masters_bucket: str = "gold-masters"           # maps to GOLD_MASTERS_BUCKET
+    aws_region: str = "us-east-1"
 
     # RabbitMQ
     rabbitmq_host: str = "localhost"
@@ -45,6 +44,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 settings = Settings()

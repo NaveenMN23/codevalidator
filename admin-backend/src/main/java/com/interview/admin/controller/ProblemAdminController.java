@@ -58,4 +58,10 @@ public class ProblemAdminController {
         boolean published = Boolean.TRUE.equals(body.get("published"));
         return ResponseEntity.ok(problemService.setPublished(id, published));
     }
+
+    @PostMapping("/{id}/build-image")
+    public ResponseEntity<Void> buildImage(@PathVariable UUID id) {
+        problemService.buildImage(id);
+        return ResponseEntity.accepted().build();
+    }
 }

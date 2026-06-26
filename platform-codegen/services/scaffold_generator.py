@@ -314,6 +314,7 @@ class ScaffoldGenerator:
             all_manifests[language] = manifest
 
             # Upload gold masters + scaffold ZIPs
+            gold_master_s3_refs: dict[str, str] = {}  # tier → s3:// URI, built as each upload succeeds
             for tier in active_tiers:
                 if tier in skipped_tiers:
                     continue
@@ -330,6 +331,7 @@ class ScaffoldGenerator:
                         safe_gold_master, test_hidden, manifest,
                         challenge_name, tier, language,
                     )
+                    gold_master_s3_refs[tier] = f"s3://gold-masters/{language}/{challenge_name}-{tier}.zip"
                 except Exception as e:
                     log.error(
                         f"ScaffoldGenerator: gold master upload failed tier={tier} lang={language}: {e}. "
@@ -346,7 +348,7 @@ class ScaffoldGenerator:
                     try:
                         zip_bytes = generator.generate_from_dict(safe_skeleton, tag, manifest, language)
                         s3_key = f"{language}/{challenge_name}-{tag}.zip"
-                        storage_client.upload_bytes(zip_bytes.getvalue(), settings.minio_bucket, s3_key)
+                        storage_client.upload_bytes(zip_bytes.getvalue(), settings.aws_s3_challenges_bucket, s3_key)
                         storage_client.export_scaffold_locally(zip_bytes.getvalue(), challenge_name, tag, language)
                         log.info(f"ScaffoldGenerator: uploaded scaffold → challenges/{s3_key}")
                     except Exception as e:
@@ -364,7 +366,10 @@ class ScaffoldGenerator:
             if settings.enable_blueprint_generation and settings.enable_llm:
                 try:
                     from services.blueprint import blueprint_service
-                    blueprints = blueprint_service.generate_all_scenarios(challenge_name, language, manifest)
+                    blueprints = blueprint_service.generate_all_scenarios(
+                        challenge_name, language, manifest,
+                        gold_master_s3_refs=gold_master_s3_refs,
+                    )
                     for bp in blueprints:
                         blueprint_service.dispatch(bp)  # best-effort: succeeds if problem row already exists
                         generated_blueprints[bp["problemId"]] = bp

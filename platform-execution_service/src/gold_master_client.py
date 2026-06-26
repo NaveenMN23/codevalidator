@@ -15,23 +15,17 @@ _PUBLIC_CLASS_RE = re.compile(r"\bpublic\s+(?:final\s+|abstract\s+)?class\s+(\w+
 
 class GoldMasterClient:
     """Fetches a published challenge's gold master (locked files + hidden test) from the
-    private gold-masters S3/MinIO bucket — same bucket/key convention platform-codegen already
+    private gold-masters S3 bucket — same bucket/key convention platform-codegen already
     writes to (see platform-codegen/infrastructure/storage.py). Used only by Submit; Run never
     touches this."""
 
     def __init__(self):
-        endpoint = os.environ.get("MINIO_ENDPOINT", "http://localhost:9000")
-        access_key = os.environ.get("MINIO_ACCESS_KEY", "admin")
-        secret_key = os.environ.get("MINIO_SECRET_KEY", "password")
         try:
             self.s3_client = boto3.client(
                 "s3",
-                endpoint_url=endpoint,
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                region_name="us-east-1",
+                region_name=os.environ.get("AWS_REGION", "us-east-1"),
             )
-            logger.info(f"GoldMasterClient connected to {endpoint}")
+            logger.info("GoldMasterClient → AWS S3")
         except Exception as e:
             logger.error(f"Failed to initialize GoldMasterClient S3 client: {e}")
             self.s3_client = None

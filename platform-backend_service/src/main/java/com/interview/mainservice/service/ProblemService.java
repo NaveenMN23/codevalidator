@@ -51,7 +51,10 @@ public class ProblemService {
 
     public Map<String, String> getProblemFiles(UUID id) {
         Problem problem = self.findProblemEntity(id);
-        return challengeStorageService.fetchFiles(problem.getId(), problem.getProblemLink());
+        // MinIO key format: {language}/{slug}.zip (e.g. python/calculator-application-easy-perform-operations.zip)
+        String language = problem.getLanguage() != null ? problem.getLanguage().toLowerCase() : "python";
+        String s3Key = language + "/" + problem.getSlug() + ".zip";
+        return challengeStorageService.fetchFiles(problem.getId(), s3Key);
     }
 
     @CircuitBreaker(name = "database")

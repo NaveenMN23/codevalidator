@@ -6,20 +6,13 @@ from pathlib import Path
 from config.settings import settings
 from infrastructure.logger import log
 
-_GOLD_MASTERS_BUCKET = "gold-masters"
 
 
 class StorageClient:
     def __init__(self):
         try:
-            self.s3_client = boto3.client(
-                "s3",
-                endpoint_url=settings.minio_endpoint,
-                aws_access_key_id=settings.minio_access_key,
-                aws_secret_access_key=settings.minio_secret_key,
-                region_name="us-east-1",
-            )
-            log.info(f"Initialized S3 client connected to {settings.minio_endpoint}")
+            self.s3_client = boto3.client("s3", region_name=settings.aws_region)
+            log.info("Initialized S3 client → AWS S3")
         except Exception as e:
             log.error(f"Failed to initialize S3 client: {e}")
             self.s3_client = None
@@ -29,11 +22,11 @@ class StorageClient:
             log.warning("S3 client not initialized. Skipping upload.")
             return False
         try:
-            self.s3_client.upload_file(str(local_path), settings.minio_bucket, s3_key)
-            log.info(f"Uploaded {local_path.name} → {settings.minio_bucket}/{s3_key}")
+            self.s3_client.upload_file(str(local_path), settings.aws_s3_challenges_bucket, s3_key)
+            log.info(f"Uploaded {local_path.name} → {settings.aws_s3_challenges_bucket}/{s3_key}")
             return True
         except Exception as e:
-            log.error(f"Failed to upload {local_path} to MinIO: {e}")
+            log.error(f"Failed to upload {local_path} to S3: {e}")
             return False
 
     def upload_gold_master(
@@ -74,13 +67,13 @@ class StorageClient:
         s3_key = f"{language}/{challenge_name}-{tier}.zip"
         try:
             self.s3_client.put_object(
-                Bucket=_GOLD_MASTERS_BUCKET,
+                Bucket=settings.gold_masters_bucket,
                 Key=s3_key,
                 Body=zip_buffer.getvalue(),
                 ContentType="application/zip",
             )
             log.info(
-                f"Uploaded gold master → {_GOLD_MASTERS_BUCKET}/{s3_key} "
+                f"Uploaded gold master → {settings.gold_masters_bucket}/{s3_key} "
                 f"({files_added} files)"
             )
             return True
@@ -138,13 +131,13 @@ class StorageClient:
             self._export_gold_master_locally(zip_bytes, files, manifest, challenge_name, tier, language)
 
         self.s3_client.put_object(
-            Bucket=_GOLD_MASTERS_BUCKET,
+            Bucket=settings.gold_masters_bucket,
             Key=s3_key,
             Body=zip_bytes,
             ContentType="application/zip",
         )
         log.info(
-            f"Uploaded gold master → {_GOLD_MASTERS_BUCKET}/{s3_key} "
+            f"Uploaded gold master → {settings.gold_masters_bucket}/{s3_key} "
             f"({files_added} entries)"
         )
 
@@ -164,7 +157,7 @@ class StorageClient:
         self, zip_bytes: bytes, challenge_name: str, scenario_tag: str, language: str
     ) -> None:
         base = settings.local_export_path
-        # 1. dist ZIP — mirrors MinIO challenges bucket for re-seeding
+        # 1. dist ZIP — mirrors S3 challenges bucket for re-seeding
         dist_dir = os.path.join(base, "dist", "challenges", language)
         os.makedirs(dist_dir, exist_ok=True)
         with open(os.path.join(dist_dir, f"{challenge_name}-{scenario_tag}.zip"), "wb") as f:
@@ -188,7 +181,7 @@ class StorageClient:
         import json as _json
         base = settings.local_export_path
         try:
-            # 1. dist ZIP — mirrors MinIO gold-masters bucket for re-seeding
+            # 1. dist ZIP — mirrors S3 gold-masters bucket for re-seeding
             dist_dir = os.path.join(base, "dist", "gold-masters", language)
             os.makedirs(dist_dir, exist_ok=True)
             with open(os.path.join(dist_dir, f"{challenge_name}-{tier}.zip"), "wb") as f:
@@ -208,7 +201,7 @@ class StorageClient:
             log.warning(f"Local gold master export failed (non-blocking): {e}")
 
     def upload_bytes(self, data: bytes, bucket: str, s3_key: str) -> None:
-        """Upload raw bytes to a MinIO bucket. Raises on failure."""
+        """Upload raw bytes to an S3 bucket. Raises on failure."""
         if not self.s3_client:
             raise RuntimeError("S3 client not initialized — cannot upload bytes")
         self.s3_client.put_object(
@@ -232,7 +225,7 @@ class StorageClient:
 
         s3_key = f"{language}/{challenge_name}-{tier}.zip"
         try:
-            obj = self.s3_client.get_object(Bucket=_GOLD_MASTERS_BUCKET, Key=s3_key)
+            obj = self.s3_client.get_object(Bucket=settings.gold_masters_bucket, Key=s3_key)
             zip_bytes = obj["Body"].read()
         except Exception as e:
             log.warning(f"get_gold_master_source: failed to fetch {s3_key}: {e}")
