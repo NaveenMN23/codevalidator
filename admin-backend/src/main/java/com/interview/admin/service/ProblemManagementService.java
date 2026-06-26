@@ -102,8 +102,8 @@ public class ProblemManagementService {
         if (scenarios.isEmpty()) {
             String slug = uniqueSlug(challengeSlug);
             String difficulty = (tiers != null && !tiers.isEmpty()) ? tiers.get(0).toUpperCase() : "EASY";
-            // S3 key format: {language}/{slug}.zip — must match what StorageClient uploads
-            String problemLink = language.toLowerCase() + "/" + slug + ".zip";
+            // S3 key format: {language}/{challengeSlug}.zip — must match what StorageClient uploads
+            String problemLink = language.toLowerCase() + "/" + challengeSlug + ".zip";
             Problem p = Problem.create(slug, toTitleCase(slug.replace('-', ' ')), description, difficulty, problemLink, tags);
             p.setTiers(tiers != null ? tiers : List.of());
             p.setLanguage(language);
@@ -120,9 +120,10 @@ public class ProblemManagementService {
             if (tag == null || tag.isBlank()) continue;
             String tierStr = scenario.get("tier") instanceof String t ? t : "easy";
             String difficulty = tierStr.toUpperCase();
-            String slug = uniqueSlug(challengeSlug + "-" + tag);
+            String originalSlug = challengeSlug + "-" + tag;
+            String slug = uniqueSlug(originalSlug);
             String title = toTitleCase(slug.replace('-', ' '));
-            String problemLink = language.toLowerCase() + "/" + slug + ".zip";
+            String problemLink = language.toLowerCase() + "/" + originalSlug + ".zip";
             Problem p = Problem.create(slug, title, description, difficulty, problemLink, tags);
             p.setTiers(tiers != null ? tiers : List.of());
             p.setLanguage(language);

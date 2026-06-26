@@ -198,7 +198,7 @@ Rules for all tiers:
 1. **Spring Boot 3 + Java 21** — records for DTOs
 2. **Spring Data JPA** with H2 in-memory for tests
 3. **Flyway** — seed 8-15 rows per table with edge-case data
-4. **`pom.xml`** — spring-boot-starter-web, spring-boot-starter-data-jpa, h2, flyway-core, lombok, spring-boot-starter-test, spring-retry (HARD)
+4. **`pom.xml`** — MUST include `<parent>` for `spring-boot-starter-parent` (e.g., version 3.2.0), and dependencies: spring-boot-starter-web, spring-boot-starter-data-jpa, h2, flyway-core, lombok, spring-boot-starter-test, spring-retry (HARD)
 5. **Complete files** — no ellipsis, no `// TODO` except in stub Javadoc steps
 6. **`stub_locations` keys must EXACTLY match `scenario_tag` values from `<scenarios>` input**
 7. **File counts are minimums** — EASY: 6-8; MEDIUM: 10-13; HARD: 15-18

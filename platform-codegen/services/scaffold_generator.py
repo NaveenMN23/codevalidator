@@ -355,12 +355,13 @@ class ScaffoldGenerator:
                         log.error(f"ScaffoldGenerator: scaffold ZIP failed for scenario={tag} lang={language}: {e}")
                         failed_scaffolds.append(f"{language}/{tag}")
 
-                try:
-                    checkpoint_key = f"codegen:checkpoint:{challenge_name}:{language}:{tier}"
-                    cache_client.set(checkpoint_key, "completed", expire=60 * 60 * 24)
-                    log.info(f"ScaffoldGenerator: checkpoint written for tier={tier} lang={language}")
-                except Exception as e:
-                    log.warning(f"ScaffoldGenerator: failed to write checkpoint tier={tier} lang={language}: {e}")
+                if not failed_scaffolds:
+                    try:
+                        checkpoint_key = f"codegen:checkpoint:{challenge_name}:{language}:{tier}"
+                        cache_client.set(checkpoint_key, "completed", expire=60 * 60 * 24)
+                        log.info(f"ScaffoldGenerator: checkpoint written for tier={tier} lang={language}")
+                    except Exception as e:
+                        log.warning(f"ScaffoldGenerator: failed to write checkpoint tier={tier} lang={language}: {e}")
 
             # Phase 3 — Blueprints (language-level, after all tiers)
             if settings.enable_blueprint_generation and settings.enable_llm:
