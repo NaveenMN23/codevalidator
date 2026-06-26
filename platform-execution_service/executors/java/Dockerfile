@@ -1,11 +1,18 @@
 FROM maven:3.9-eclipse-temurin-21
+
 WORKDIR /build
 COPY pom.xml .
 COPY src/ src/
-# Running the full `test` lifecycle (not just dependency:go-offline) bakes both the declared
-# <dependencies> AND the build-lifecycle plugins (compiler, resources, surefire, jar) into the
-# image's local Maven repo — go-offline alone only resolves dependencies, not the plugins
-# needed to actually run `mvn test`, which left challenge submissions failing to resolve
-# maven-resources-plugin etc. in offline mode.
+# Full test run bakes both declared dependencies AND build-lifecycle plugins (compiler,
+# resources, surefire, jar) into the local Maven repo so offline mode works at runtime.
 RUN mvn -B test
+
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y python3 python3-pip --no-install-recommends \
+    && pip3 install --no-cache-dir fastapi uvicorn --break-system-packages \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ../sandbox_server.py .
+
+CMD ["python3", "-m", "uvicorn", "sandbox_server:app", "--host", "0.0.0.0", "--port", "8080"]
