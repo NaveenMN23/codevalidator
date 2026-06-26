@@ -48,6 +48,9 @@ public class Problem {
     @Column(name = "is_published", nullable = false)
     private boolean isPublished = false;
 
+    @Column(name = "ecr_image_uri")
+    private String ecrImageUri;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -122,6 +125,14 @@ public class Problem {
 
     public boolean isPublished() {
         return isPublished;
+    }
+
+    public String getEcrImageUri() {
+        return ecrImageUri;
+    }
+
+    public void setEcrImageUri(String ecrImageUri) {
+        this.ecrImageUri = ecrImageUri;
     }
 
     public Instant getCreatedAt() {
