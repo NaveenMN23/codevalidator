@@ -2,6 +2,7 @@ package com.interview.admin.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.interview.admin.dto.PageResponse;
 import com.interview.admin.dto.ProblemRequest;
 import com.interview.admin.dto.ProblemResponse;
@@ -109,9 +110,22 @@ public class ProblemManagementService {
             p.setLanguage(language);
             p.setTier((tiers != null && !tiers.isEmpty()) ? tiers.get(0) + "-scenario-1" : "easy-scenario-1");
             p.setPublished(true);
+            Problem saved = problemRepository.save(p);
             String bpJson = blueprintsBySlug.get(slug);
-            if (bpJson != null) p.setBlueprint(bpJson);
-            return List.of(problemRepository.save(p));
+            if (bpJson != null) {
+                try {
+                    ObjectNode bpNode = (ObjectNode) objectMapper.readTree(bpJson);
+                    bpNode.put("problemId", saved.getId().toString());
+                    bpNode.put("slug", saved.getSlug());
+                    saved.setBlueprint(objectMapper.writeValueAsString(bpNode));
+                    saved = problemRepository.save(saved);
+                } catch (Exception e) {
+                    log.error("Failed to inject IDs into blueprint for {}: {}", saved.getSlug(), e.getMessage());
+                    saved.setBlueprint(bpJson);
+                    saved = problemRepository.save(saved);
+                }
+            }
+            return List.of(saved);
         }
 
         List<Problem> created = new ArrayList<>();
@@ -130,8 +144,21 @@ public class ProblemManagementService {
             p.setTier(tag);
             p.setPublished(true);
             String bpJson = blueprintsBySlug.get(challengeSlug + "-" + tag);
-            if (bpJson != null) p.setBlueprint(bpJson);
-            created.add(problemRepository.save(p));
+            Problem saved = problemRepository.save(p);
+            if (bpJson != null) {
+                try {
+                    ObjectNode bpNode = (ObjectNode) objectMapper.readTree(bpJson);
+                    bpNode.put("problemId", saved.getId().toString());
+                    bpNode.put("slug", saved.getSlug());
+                    saved.setBlueprint(objectMapper.writeValueAsString(bpNode));
+                    saved = problemRepository.save(saved);
+                } catch (Exception e) {
+                    log.error("Failed to inject IDs into blueprint for {}: {}", saved.getSlug(), e.getMessage());
+                    saved.setBlueprint(bpJson);
+                    saved = problemRepository.save(saved);
+                }
+            }
+            created.add(saved);
         }
         return created;
     }

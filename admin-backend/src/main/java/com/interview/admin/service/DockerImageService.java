@@ -24,14 +24,6 @@ public class DockerImageService {
 
     private static final Logger log = LoggerFactory.getLogger(DockerImageService.class);
 
-    private static final String DOCKERFILE_TEMPLATE = """
-            FROM platform/%s-executor:latest
-            WORKDIR /build
-            COPY pom.xml .
-            RUN mvn -B dependency:go-offline
-            WORKDIR /app
-            """;
-
     private final S3Client s3Client;
     private final EcrClient ecrClient;
 
@@ -47,9 +39,10 @@ public class DockerImageService {
     }
 
     /**
-     * Downloads scaffold ZIP from S3, extracts pom.xml, builds a per-challenge Docker image,
-     * and pushes it to ECR. Runs asynchronously so it never blocks the RabbitMQ listener.
-     * If ECR_REPOSITORY_URI is not configured, the image is stored locally only.
+     * Downloads scaffold ZIP from S3, extracts the language dependency file, builds a
+     * per-challenge Docker image, and pushes it to ECR. Runs asynchronously so it never
+     * blocks the RabbitMQ listener. If ECR_REPOSITORY_URI is not configured, the image
+     * is stored locally only.
      */
     @Async
     public void buildAndPush(String slug, String language, String s3Key) {
@@ -64,42 +57,13 @@ public class DockerImageService {
             byte[] depFile = extractDependencyFileFromScaffoldZip(s3Key, language);
             tmpDir = Files.createTempDirectory("challenge-image-" + slug + "-");
 
-            String dockerfileContent = "";
             if (depFile != null) {
-                if ("python".equals(language)) {
-                    Files.write(tmpDir.resolve("requirements.txt"), depFile);
-                    dockerfileContent = """
-                            FROM platform/python-executor:latest
-                            WORKDIR /build
-                            COPY requirements.txt .
-                            RUN pip install -r requirements.txt
-                            WORKDIR /app
-                            """;
-                } else if ("node".equals(language)) {
-                    Files.write(tmpDir.resolve("package.json"), depFile);
-                    dockerfileContent = """
-                            FROM platform/node-executor:latest
-                            WORKDIR /build
-                            COPY package.json .
-                            RUN npm install
-                            WORKDIR /app
-                            """;
-                } else {
-                    Files.write(tmpDir.resolve("pom.xml"), depFile);
-                    dockerfileContent = """
-                            FROM platform/java-executor:latest
-                            WORKDIR /build
-                            COPY pom.xml .
-                            RUN mvn -B dependency:go-offline
-                            WORKDIR /app
-                            """;
-                }
+                Files.write(tmpDir.resolve(DockerfileTemplates.depFileName(language)), depFile);
             } else {
                 log.warn("No dependency file found in scaffold ZIP {} for language {} — building plain image for {}", s3Key, language, slug);
-                dockerfileContent = "FROM platform/" + language + "-executor:latest\nWORKDIR /app\n";
             }
-            
-            Files.writeString(tmpDir.resolve("Dockerfile"), dockerfileContent);
+
+            Files.writeString(tmpDir.resolve("Dockerfile"), DockerfileTemplates.build(language, depFile != null));
 
             log.info("Building Docker image {} from scaffold {}", localTag, s3Key);
             runCommand(tmpDir, "docker", "build", "-t", localTag, ".");
@@ -160,14 +124,7 @@ public class DockerImageService {
     }
 
     private byte[] extractDependencyFileFromScaffoldZip(String s3Key, String language) throws IOException {
-        String fileName;
-        if ("python".equals(language)) {
-            fileName = "requirements.txt";
-        } else if ("node".equals(language)) {
-            fileName = "package.json";
-        } else {
-            fileName = "pom.xml";
-        }
+        String fileName = DockerfileTemplates.depFileName(language);
         
         GetObjectRequest req = GetObjectRequest.builder()
                 .bucket(challengesBucket)

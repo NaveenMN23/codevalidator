@@ -112,8 +112,6 @@ class BlueprintService:
         blueprint["problemId"] = problem_id
         if gold_master_s3_ref:
             blueprint["goldMasterRef"] = gold_master_s3_ref
-
-        blueprint = self._embed_gold_master_source(blueprint, source_files or {})
         return blueprint
 
     def generate_all_scenarios(
