@@ -1,4 +1,4 @@
-package com.interview.mainservice.service;
+package com.interview.mainservice.infrastructure;
 
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.io.InputStream;

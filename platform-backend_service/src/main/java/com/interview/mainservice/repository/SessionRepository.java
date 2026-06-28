@@ -1,16 +1,18 @@
-package com.interview.mainservice.service;
+package com.interview.mainservice.repository;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
-public class RedisSessionStore {
+public class SessionRepository {
 
     private static final String KEY_PREFIX = "fargate:session:";
     private static final String SPAWNING_KEY_PREFIX = "fargate:spawning:";
@@ -18,7 +20,7 @@ public class RedisSessionStore {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
 
-    public RedisSessionStore(StringRedisTemplate redis, ObjectMapper objectMapper) {
+    public SessionRepository(StringRedisTemplate redis, ObjectMapper objectMapper) {
         this.redis = redis;
         this.objectMapper = objectMapper;
     }
@@ -53,11 +55,47 @@ public class RedisSessionStore {
 
     public boolean tryMarkSpawning(String sessionId, long ttlSeconds) {
         return Boolean.TRUE.equals(redis.opsForValue()
-                .setIfAbsent(spawningKey(sessionId), "1", ttlSeconds, TimeUnit.SECONDS));
+                .setIfAbsent(spawningKey(sessionId), "pending", ttlSeconds, TimeUnit.SECONDS));
+    }
+
+    public void updateSpawningArn(String sessionId, String taskArn, long ttlSeconds) {
+        redis.opsForValue().set(spawningKey(sessionId), taskArn, ttlSeconds, TimeUnit.SECONDS);
     }
 
     public void clearSpawning(String sessionId) {
         redis.delete(spawningKey(sessionId));
+    }
+
+    public Set<String> getActiveTaskArns() {
+        Set<String> arns = new HashSet<>();
+
+        Set<String> sessionKeys = redis.keys(KEY_PREFIX + "*");
+        if (sessionKeys != null && !sessionKeys.isEmpty()) {
+            List<String> values = redis.opsForValue().multiGet(new ArrayList<>(sessionKeys));
+            if (values != null) {
+                for (String json : values) {
+                    if (json == null) continue;
+                    try {
+                        String arn = objectMapper.readValue(json, SessionEntry.class).taskArn();
+                        if (arn != null) arns.add(arn);
+                    } catch (JsonProcessingException ignored) {}
+                }
+            }
+        }
+
+        // Include ARNs for tasks mid-spawn (runTask called but setSession not yet called).
+        // The spawning key value is "pending" initially and updated to the task ARN once runTask returns.
+        Set<String> spawningKeys = redis.keys(SPAWNING_KEY_PREFIX + "*");
+        if (spawningKeys != null && !spawningKeys.isEmpty()) {
+            List<String> values = redis.opsForValue().multiGet(new ArrayList<>(spawningKeys));
+            if (values != null) {
+                for (String value : values) {
+                    if (value != null && value.startsWith("arn:")) arns.add(value);
+                }
+            }
+        }
+
+        return arns;
     }
 
     private String key(String sessionId) {
@@ -66,23 +104,6 @@ public class RedisSessionStore {
 
     private String spawningKey(String sessionId) {
         return SPAWNING_KEY_PREFIX + sessionId;
-    }
-
-    public Set<String> getActiveTaskArns() {
-        Set<String> keys = redis.keys(KEY_PREFIX + "*");
-        if (keys == null || keys.isEmpty()) return Set.of();
-        return keys.stream()
-                .map(k -> redis.opsForValue().get(k))
-                .filter(json -> json != null)
-                .map(json -> {
-                    try {
-                        return objectMapper.readValue(json, SessionEntry.class).taskArn();
-                    } catch (JsonProcessingException e) {
-                        return null;
-                    }
-                })
-                .filter(arn -> arn != null)
-                .collect(Collectors.toSet());
     }
 
     public record SessionEntry(String privateIp, String taskArn) {}

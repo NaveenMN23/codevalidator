@@ -3,6 +3,8 @@ package com.interview.mainservice.service;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.mainservice.dto.RunResponse;
+import com.interview.mainservice.infrastructure.ChallengeStorageService;
+import com.interview.mainservice.repository.SessionRepository;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -66,10 +68,25 @@ public class ExecutionService {
     private static final int TASK_START_TIMEOUT_MS = 90_000;
     private static final int SPAWN_LOCK_TTL_SECONDS = 100;
 
+    private static final Map<String, String> LANGUAGE_COMMANDS = Map.of(
+            "java",   "mvn -o test -Dsurefire.skipAfterFailureCount=1",
+            "node",   "npm test",
+            "python", "pytest"
+    );
+
+    public static String resolveCommand(String language) {
+        String command = LANGUAGE_COMMANDS.get(language);
+        if (command == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Unsupported language: " + language);
+        }
+        return command;
+    }
+
     private final EcsClient ecsClient;
     private final Ec2Client ec2Client;
     private final S3Client s3Client;
-    private final RedisSessionStore sessionStore;
+    private final SessionRepository sessionStore;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final ExecutorService executionServiceExecutor;
@@ -102,7 +119,7 @@ public class ExecutionService {
     private int sandboxServerPort;
 
     public ExecutionService(EcsClient ecsClient, Ec2Client ec2Client, S3Client s3Client,
-                            RedisSessionStore sessionStore, ObjectMapper objectMapper,
+                            SessionRepository sessionStore, ObjectMapper objectMapper,
                             ExecutorService executionServiceExecutor) {
         this.ecsClient = ecsClient;
         this.ec2Client = ec2Client;
@@ -156,7 +173,7 @@ public class ExecutionService {
 
     private String getOrSpawnTask(String sessionId, String ecrImageUri) {
         return sessionStore.getSession(sessionId)
-                .map(RedisSessionStore.SessionEntry::privateIp)
+                .map(SessionRepository.SessionEntry::privateIp)
                 .orElseGet(() -> spawnAndRegister(sessionId, ecrImageUri));
     }
 
@@ -205,6 +222,7 @@ public class ExecutionService {
 
         Task task = runTaskResponse.tasks().get(0);
         String taskArn = task.taskArn();
+        sessionStore.updateSpawningArn(sessionId, taskArn, SPAWN_LOCK_TTL_SECONDS);
         String privateIp = waitForTaskRunning(taskArn);
 
         sessionStore.setSession(sessionId, privateIp, taskArn, sessionTtlSeconds);
@@ -266,7 +284,7 @@ public class ExecutionService {
     private String awaitInFlightSpawn(String sessionId) {
         long deadline = System.currentTimeMillis() + TASK_START_TIMEOUT_MS;
         while (System.currentTimeMillis() < deadline) {
-            Optional<RedisSessionStore.SessionEntry> session = sessionStore.getSession(sessionId);
+            Optional<SessionRepository.SessionEntry> session = sessionStore.getSession(sessionId);
             if (session.isPresent()) {
                 return session.get().privateIp();
             }
