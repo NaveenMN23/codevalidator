@@ -9,27 +9,46 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.ec2.model.DescribeNetworkInterfacesRequest;
+import software.amazon.awssdk.services.ec2.model.NetworkInterface;
 import software.amazon.awssdk.services.ecs.EcsClient;
 import software.amazon.awssdk.services.ecs.model.AssignPublicIp;
 import software.amazon.awssdk.services.ecs.model.KeyValuePair;
 import software.amazon.awssdk.services.ecs.model.AwsVpcConfiguration;
+import software.amazon.awssdk.services.ecs.model.ClientException;
+import software.amazon.awssdk.services.ecs.model.Compatibility;
+import software.amazon.awssdk.services.ecs.model.ContainerDefinition;
 import software.amazon.awssdk.services.ecs.model.ContainerOverride;
+import software.amazon.awssdk.services.ecs.model.DescribeTaskDefinitionRequest;
 import software.amazon.awssdk.services.ecs.model.DescribeTasksRequest;
 import software.amazon.awssdk.services.ecs.model.DescribeTasksResponse;
 import software.amazon.awssdk.services.ecs.model.LaunchType;
+import software.amazon.awssdk.services.ecs.model.LogConfiguration;
+import software.amazon.awssdk.services.ecs.model.LogDriver;
 import software.amazon.awssdk.services.ecs.model.NetworkConfiguration;
+import software.amazon.awssdk.services.ecs.model.NetworkMode;
+import software.amazon.awssdk.services.ecs.model.PortMapping;
+import software.amazon.awssdk.services.ecs.model.RegisterTaskDefinitionRequest;
 import software.amazon.awssdk.services.ecs.model.RunTaskRequest;
 import software.amazon.awssdk.services.ecs.model.RunTaskResponse;
 import software.amazon.awssdk.services.ecs.model.Task;
@@ -41,14 +60,19 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 @Service
 public class ExecutionService {
 
+    private static final Logger log = LoggerFactory.getLogger(ExecutionService.class);
+
     private static final int TASK_START_POLL_INTERVAL_MS = 3_000;
     private static final int TASK_START_TIMEOUT_MS = 90_000;
+    private static final int SPAWN_LOCK_TTL_SECONDS = 100;
 
     private final EcsClient ecsClient;
+    private final Ec2Client ec2Client;
     private final S3Client s3Client;
     private final RedisSessionStore sessionStore;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final ExecutorService executionServiceExecutor;
 
     @Value("${app.aws.ecs.cluster-arn}")
     private String clusterArn;
@@ -59,6 +83,15 @@ public class ExecutionService {
     @Value("${app.aws.ecs.security-group-id}")
     private String securityGroupId;
 
+    @Value("${app.aws.ecs.execution-role-arn}")
+    private String executionRoleArn;
+
+    @Value("${app.aws.ecs.assign-public-ip:DISABLED}")
+    private AssignPublicIp assignPublicIp;
+
+    @Value("${AWS_REGION:ap-southeast-2}")
+    private String awsRegion;
+
     @Value("${app.aws.s3.gold-masters-bucket}")
     private String goldMastersBucket;
 
@@ -68,12 +101,15 @@ public class ExecutionService {
     @Value("${app.fargate.sandbox-server-port}")
     private int sandboxServerPort;
 
-    public ExecutionService(EcsClient ecsClient, S3Client s3Client,
-                            RedisSessionStore sessionStore, ObjectMapper objectMapper) {
+    public ExecutionService(EcsClient ecsClient, Ec2Client ec2Client, S3Client s3Client,
+                            RedisSessionStore sessionStore, ObjectMapper objectMapper,
+                            ExecutorService executionServiceExecutor) {
         this.ecsClient = ecsClient;
+        this.ec2Client = ec2Client;
         this.s3Client = s3Client;
         this.sessionStore = sessionStore;
         this.objectMapper = objectMapper;
+        this.executionServiceExecutor = executionServiceExecutor;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
@@ -86,11 +122,11 @@ public class ExecutionService {
         return response;
     }
 
-    public RunResponse submit(String sessionId, String ecrImageUri, String challengeSlug,
+    public RunResponse submit(String sessionId, String ecrImageUri, String hiddenTestKey,
                               String language, Map<String, String> files, String command) {
         String privateIp = getOrSpawnTask(sessionId, ecrImageUri);
 
-        HiddenTestResult hiddenTest = fetchHiddenTest(challengeSlug, language);
+        HiddenTestResult hiddenTest = fetchHiddenTest(hiddenTestKey, language);
         Map<String, String> allFiles = new HashMap<>(files);
         allFiles.putAll(hiddenTest.lockedFiles());
         allFiles.put(hiddenTest.hiddenTestPath(), hiddenTest.hiddenTestContent());
@@ -100,23 +136,59 @@ public class ExecutionService {
         return response;
     }
 
+    /**
+     * Eagerly starts a Fargate task for this session without blocking the caller — the spawn
+     * runs on {@code executionServiceExecutor} so a problem-open request can return immediately
+     * while the ~30-60s cold start happens in the background.
+     */
+    public void warmUp(String sessionId, String ecrImageUri) {
+        if (sessionStore.getSession(sessionId).isPresent()) {
+            return;
+        }
+        executionServiceExecutor.submit(() -> {
+            try {
+                spawnAndRegister(sessionId, ecrImageUri);
+            } catch (Exception e) {
+                log.warn("Warm-up spawn failed for session {}: {}", sessionId, e.getMessage());
+            }
+        });
+    }
+
     private String getOrSpawnTask(String sessionId, String ecrImageUri) {
         return sessionStore.getSession(sessionId)
                 .map(RedisSessionStore.SessionEntry::privateIp)
                 .orElseGet(() -> spawnAndRegister(sessionId, ecrImageUri));
     }
 
+    /**
+     * Holds a short-lived Redis lock around the actual spawn so a /run call racing an
+     * in-flight warm-up (or two concurrent callers) doesn't start two Fargate tasks for the
+     * same session — the loser waits for the winner's session to appear instead.
+     */
     private String spawnAndRegister(String sessionId, String ecrImageUri) {
+        if (!sessionStore.tryMarkSpawning(sessionId, SPAWN_LOCK_TTL_SECONDS)) {
+            return awaitInFlightSpawn(sessionId);
+        }
+        try {
+            return doSpawn(sessionId, ecrImageUri);
+        } finally {
+            sessionStore.clearSpawning(sessionId);
+        }
+    }
+
+    private String doSpawn(String sessionId, String ecrImageUri) {
         List<String> subnets = Arrays.asList(subnetIds.split(","));
+        String taskDefinition = resolveTaskDefinition(ecrImageUri);
 
         RunTaskRequest runTaskRequest = RunTaskRequest.builder()
                 .cluster(clusterArn)
+                .taskDefinition(taskDefinition)
                 .launchType(LaunchType.FARGATE)
                 .networkConfiguration(NetworkConfiguration.builder()
                         .awsvpcConfiguration(AwsVpcConfiguration.builder()
                                 .subnets(subnets)
                                 .securityGroups(securityGroupId)
-                                .assignPublicIp(AssignPublicIp.DISABLED)
+                                .assignPublicIp(assignPublicIp)
                                 .build())
                         .build())
                 .overrides(TaskOverride.builder()
@@ -137,6 +209,71 @@ public class ExecutionService {
 
         sessionStore.setSession(sessionId, privateIp, taskArn, sessionTtlSeconds);
         return privateIp;
+    }
+
+    /**
+     * Resolves the task definition family whose container image is {@code ecrImageUri},
+     * registering it on first use. ECS has no way to override a container's image at RunTask
+     * time, so each distinct ECR image needs its own task definition; the family name is a
+     * stable hash of the image URI so repeated calls for the same image reuse it.
+     */
+    private String resolveTaskDefinition(String ecrImageUri) {
+        String family = "sandbox-" + sha256Hex(ecrImageUri).substring(0, 16);
+        try {
+            ecsClient.describeTaskDefinition(DescribeTaskDefinitionRequest.builder()
+                    .taskDefinition(family)
+                    .build());
+            return family;
+        } catch (ClientException e) {
+            ecsClient.registerTaskDefinition(RegisterTaskDefinitionRequest.builder()
+                    .family(family)
+                    .networkMode(NetworkMode.AWSVPC)
+                    .requiresCompatibilities(Compatibility.FARGATE)
+                    .cpu("512")
+                    .memory("1024")
+                    .executionRoleArn(executionRoleArn)
+                    .containerDefinitions(ContainerDefinition.builder()
+                            .name("sandbox")
+                            .image(ecrImageUri)
+                            .portMappings(PortMapping.builder().containerPort(sandboxServerPort).build())
+                            .logConfiguration(LogConfiguration.builder()
+                                    .logDriver(LogDriver.AWSLOGS)
+                                    .options(Map.of(
+                                            "awslogs-group", "/ecs/sandbox",
+                                            "awslogs-region", awsRegion,
+                                            "awslogs-stream-prefix", "sandbox",
+                                            "awslogs-create-group", "true"))
+                                    .build())
+                            .build())
+                    .build());
+            return family;
+        }
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    private String awaitInFlightSpawn(String sessionId) {
+        long deadline = System.currentTimeMillis() + TASK_START_TIMEOUT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            Optional<RedisSessionStore.SessionEntry> session = sessionStore.getSession(sessionId);
+            if (session.isPresent()) {
+                return session.get().privateIp();
+            }
+            sleepPoll();
+        }
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Timed out waiting for in-flight container spawn");
     }
 
     private String waitForTaskRunning(String taskArn) {
@@ -160,25 +297,58 @@ public class ExecutionService {
                 }
             }
 
-            try {
-                Thread.sleep(TASK_START_POLL_INTERVAL_MS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Interrupted while waiting for container");
-            }
+            sleepPoll();
         }
 
         throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Timed out waiting for execution container to start");
     }
 
+    private void sleepPoll() {
+        try {
+            Thread.sleep(TASK_START_POLL_INTERVAL_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Interrupted while waiting for container");
+        }
+    }
+
     private String extractPrivateIp(Task task) {
-        return task.attachments().stream()
+        var eni = task.attachments().stream()
                 .filter(a -> "ElasticNetworkInterface".equals(a.type()))
                 .findFirst()
-                .flatMap(a -> a.details().stream()
-                        .filter(d -> "privateIPv4Address".equals(d.name()))
-                        .findFirst())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "Could not determine container IP address"));
+
+        if (assignPublicIp == AssignPublicIp.ENABLED) {
+            String eniId = eni.details().stream()
+                    .filter(d -> "networkInterfaceId".equals(d.name()))
+                    .map(KeyValuePair::value)
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                            "Could not find ENI ID in task attachment"));
+
+            NetworkInterface ni = ec2Client.describeNetworkInterfaces(
+                    DescribeNetworkInterfacesRequest.builder()
+                            .networkInterfaceIds(eniId)
+                            .build())
+                    .networkInterfaces().stream()
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                            "Could not resolve network interface: " + eniId));
+
+            String publicIp = ni.association() != null ? ni.association().publicIp() : null;
+            if (publicIp == null || publicIp.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "No public IP attached to ENI: " + eniId);
+            }
+            log.debug("Resolved public IP {} for ENI {} (task {})", publicIp, eniId, task.taskArn());
+            return publicIp;
+        }
+
+        return eni.details().stream()
+                .filter(d -> "privateIPv4Address".equals(d.name()))
                 .map(KeyValuePair::value)
+                .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                         "Could not determine container IP address"));
     }
@@ -207,12 +377,11 @@ public class ExecutionService {
         }
     }
 
-    private HiddenTestResult fetchHiddenTest(String challengeSlug, String language) {
-        String s3Key = language + "/" + challengeSlug + ".zip";
+    private HiddenTestResult fetchHiddenTest(String hiddenTestKey, String language) {
         ResponseBytes<GetObjectResponse> responseBytes = s3Client.getObjectAsBytes(
                 GetObjectRequest.builder()
                         .bucket(goldMastersBucket)
-                        .key(s3Key)
+                        .key(hiddenTestKey)
                         .build());
 
         Map<String, String> lockedFiles = new HashMap<>();
@@ -236,12 +405,12 @@ public class ExecutionService {
             }
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Failed to fetch hidden test for: " + challengeSlug);
+                    "Failed to fetch hidden test for key: " + hiddenTestKey);
         }
 
         if (hiddenTestContent == null) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "No hidden test found for: " + challengeSlug);
+                    "No hidden test found for key: " + hiddenTestKey);
         }
 
         return new HiddenTestResult(lockedFiles, hiddenTestPath, hiddenTestContent);

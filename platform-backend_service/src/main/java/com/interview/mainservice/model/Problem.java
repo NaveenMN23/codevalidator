@@ -51,6 +51,9 @@ public class Problem {
     @Column(name = "ecr_image_uri")
     private String ecrImageUri;
 
+    @Column(name = "hidden_test_key")
+    private String hiddenTestKey;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -133,6 +136,14 @@ public class Problem {
 
     public void setEcrImageUri(String ecrImageUri) {
         this.ecrImageUri = ecrImageUri;
+    }
+
+    public String getHiddenTestKey() {
+        return hiddenTestKey;
+    }
+
+    public void setHiddenTestKey(String hiddenTestKey) {
+        this.hiddenTestKey = hiddenTestKey;
     }
 
     public Instant getCreatedAt() {
