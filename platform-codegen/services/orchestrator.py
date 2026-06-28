@@ -1,14 +1,11 @@
 import hashlib
 import os
 from pathlib import Path
-import requests
 from infrastructure.cache import cache_client
 from infrastructure.storage import storage_client
 from infrastructure.logger import log
 from generator.engine import generator
 from services.llm import llm_service
-
-EXECUTION_SERVICE_URL = os.environ.get("EXECUTION_SERVICE_URL", "http://localhost:8001")
 
 class ChallengeOrchestrator:
     def _hash_challenge_source(self, challenge_name: str, language: str) -> str:
@@ -48,12 +45,6 @@ class ChallengeOrchestrator:
         if not success:
             raise Exception("Failed to upload generated challenge to storage")
 
-        # 3b. Trigger the per-challenge Docker image build (publish-time, not session-time —
-        # see docs/design/repo-execution-architecture.md §4). Best-effort: SessionContainerManager
-        # falls back to the generic shared base image if this hasn't run yet for a challenge,
-        # so a failure here shouldn't block publishing the challenge itself.
-        self._trigger_image_build(challenge_name, language)
-
         # 4. Generate and Dispatch Blueprint (AI Evaluation Context)
         # We use a challenge ID that matches what the backend expects
         challenge_id = zip_path.stem # e.g. "lru-cache-java"
@@ -65,18 +56,5 @@ class ChallengeOrchestrator:
         cache_client.set(cache_key, s3_url)
         
         return s3_url
-
-    def _trigger_image_build(self, challenge_name: str, language: str) -> None:
-        try:
-            response = requests.post(
-                f"{EXECUTION_SERVICE_URL}/build-challenge-image",
-                json={"challengeId": challenge_name, "language": language},
-                timeout=300,
-            )
-            response.raise_for_status()
-            log.info(f"Triggered image build for {challenge_name}/{language}: {response.json()}")
-        except Exception as e:
-            log.warning(f"Per-challenge image build failed for {challenge_name}/{language} "
-                        f"(will fall back to the shared base image at Run time): {e}")
 
 orchestrator = ChallengeOrchestrator()

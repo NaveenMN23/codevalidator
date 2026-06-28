@@ -16,6 +16,10 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:admin}
     password: ${RABBITMQ_PASSWORD:password}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 app:
   security:
@@ -23,11 +27,19 @@ app:
   jwt:
     secret: ${JWT_SECRET:change-this-to-a-256-bit-secret-in-every-environment}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
-  execution-service:
-    base-url: ${EXECUTION_SERVICE_URL:http://localhost:8001}
   aws:
     s3:
       challenges-bucket: ${AWS_S3_CHALLENGES_BUCKET:challenges-repo}
+      gold-masters-bucket: ${AWS_S3_GOLD_MASTERS_BUCKET:gold-masters}
+    ecs:
+      cluster-arn: ${ECS_CLUSTER_ARN:}
+      subnet-ids: ${ECS_SUBNET_IDS:}
+      security-group-id: ${ECS_SECURITY_GROUP_ID:}
+      execution-role-arn: ${ECS_EXECUTION_ROLE_ARN:}
+      assign-public-ip: ${ECS_ASSIGN_PUBLIC_IP:DISABLED}
+  fargate:
+    session-ttl-seconds: ${FARGATE_SESSION_TTL:600}
+    sandbox-server-port: ${SANDBOX_SERVER_PORT:8080}
   grading-queue: ${GRADING_QUEUE:grading-queue}
 
 management:
@@ -58,13 +70,6 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 5
-  bulkhead:
-    instances:
-      executionService:
-        # Placeholder — needs sizing against the Execution Service's real concurrent
-        # capacity (see docs/design/deferred-eager-final-architecture.md §6 item 6).
-        max-concurrent-calls: 50
-        max-wait-duration: 2s
 
 logging:
   level:

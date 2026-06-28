@@ -46,13 +46,22 @@ public class RunController {
                 RunResponse response = runService.run(userId, problemId, request);
                 deferredResult.setResult(ResponseEntity.ok(response));
             } catch (ResponseStatusException e) {
-                deferredResult.setResult(ResponseEntity.status(e.getStatusCode()).build());
+                deferredResult.setResult(ResponseEntity.status(e.getStatusCode())
+                        .body(new RunResponse(false, "", e.getReason(), -1)));
             } catch (Exception e) {
                 log.error("Run failed for problem {}: {}", problemId, e.getMessage());
-                deferredResult.setResult(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
+                deferredResult.setResult(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(new RunResponse(false, "", e.getMessage(), -1)));
             }
         });
 
         return deferredResult;
+    }
+
+    @PostMapping("/{id}/run/session")
+    public ResponseEntity<Void> openSession(@PathVariable("id") UUID problemId,
+                                             @AuthenticationPrincipal UUID userId) {
+        runService.openSession(userId, problemId);
+        return ResponseEntity.accepted().build();
     }
 }

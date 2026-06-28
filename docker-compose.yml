@@ -23,15 +23,12 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    volumes:
-      - ./challenges/book-my-show/dist/node:/seed_data
     entrypoint: >
       /bin/sh -c "
       /usr/bin/mc alias set myminio http://minio:9000 admin password;
       /usr/bin/mc mb myminio/challenges || true;
       /usr/bin/mc mb myminio/gold-masters || true;
       /usr/bin/mc anonymous set download myminio/challenges;
-      /usr/bin/mc cp /seed_data/*.zip myminio/challenges/node/ || true;
       exit 0;
       "
 
@@ -95,11 +92,17 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: admin
       SPRING_RABBITMQ_PASSWORD: password
-      EXECUTION_SERVICE_URL: http://execution-service:8001
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_REGION: ${AWS_REGION:-ap-southeast-2}
       AWS_S3_CHALLENGES_BUCKET: ${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
+      AWS_S3_GOLD_MASTERS_BUCKET: ${AWS_S3_GOLD_MASTERS_BUCKET:-gold-masters}
+      ECS_CLUSTER_ARN: ${ECS_CLUSTER_ARN:-}
+      ECS_SUBNET_IDS: ${ECS_SUBNET_IDS:-}
+      ECS_SECURITY_GROUP_ID: ${ECS_SECURITY_GROUP_ID:-}
+      ECS_EXECUTION_ROLE_ARN: ${ECS_EXECUTION_ROLE_ARN:-}
+      ECS_ASSIGN_PUBLIC_IP: ${ECS_ASSIGN_PUBLIC_IP:-DISABLED}
+      REDIS_HOST: redis
       SECURITY_AUTH_ENABLED: "false"
     depends_on:
       postgres:
@@ -108,8 +111,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      execution-service:
-        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health 2>/dev/null | grep -q UP"]
       interval: 10s
@@ -126,7 +127,6 @@ services:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=admin
       - MINIO_SECRET_KEY=password
-      - EXECUTION_SERVICE_URL=http://execution-service:8001
       - REDIS_HOST=redis
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
@@ -140,14 +140,12 @@ services:
       - CODEGEN_REQUEST_QUEUE=codegen-request-queue
       - CODEGEN_RESULTS_QUEUE=codegen-results-queue
     volumes:
-      - ./challenges:/challenges
       - ./generated:/generated
     depends_on:
       - backend
       - minio
       - redis
       - rabbitmq
-      - execution-service
 
   admin-backend:
     build: ./admin-backend
@@ -189,36 +187,6 @@ services:
     depends_on:
       - backend
 
-  # Builds the Java executor image with the base Spring Boot dependency tree
-  # baked into the local Maven repo via `mvn dependency:go-offline`.
-  java-executor-build:
-    build:
-      context: ./platform-execution_service/executors/java
-    image: platform/java-executor:latest
-    command: echo "Java executor image built"
-
-  # Deferred Eager session-container manager for Run (see
-  # docs/design/deferred-eager-final-architecture.md) — owns long-lived, session-pinned
-  # containers behind a synchronous HTTP API. Submit/grading will move here too; the
-  # previous separate `platform-workers` RabbitMQ-based grading service has been removed.
-  execution-service:
-    build: ./platform-execution_service
-    container_name: platform_execution_service
-    ports:
-      - "8001:8001"
-    environment:
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ACCESS_KEY=admin
-      - MINIO_SECRET_KEY=password
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/sessions:/tmp/sessions
-      - ./challenges:/challenges:ro
-    depends_on:
-      java-executor-build:
-        condition: service_completed_successfully
-      minio:
-        condition: service_healthy
 
 volumes:
   minio_data:
