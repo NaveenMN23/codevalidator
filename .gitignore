@@ -74,3 +74,6 @@ challenges/**/*.zip
 platform-codegen/few_shots
 
 generated/
+
+.claude
+.serena
