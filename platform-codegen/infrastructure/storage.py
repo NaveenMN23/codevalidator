@@ -16,6 +16,25 @@ class StorageClient:
         except Exception as e:
             log.error(f"Failed to initialize S3 client: {e}")
             self.s3_client = None
+        self.tracked_uploads = []
+
+    def reset_tracker(self):
+        self.tracked_uploads = []
+
+    def track_upload(self, bucket: str, key: str):
+        self.tracked_uploads.append((bucket, key))
+
+    def rollback_uploads(self):
+        if not self.s3_client or not self.tracked_uploads:
+            return
+        log.warning(f"Rolling back {len(self.tracked_uploads)} S3 uploads due to job failure...")
+        for bucket, key in self.tracked_uploads:
+            try:
+                self.s3_client.delete_object(Bucket=bucket, Key=key)
+                log.info(f"Rollback: deleted {bucket}/{key}")
+            except Exception as e:
+                log.error(f"Rollback failed to delete {bucket}/{key}: {e}")
+        self.reset_tracker()
 
     def upload_file(self, local_path: Path, s3_key: str) -> bool:
         if not self.s3_client:
@@ -23,6 +42,7 @@ class StorageClient:
             return False
         try:
             self.s3_client.upload_file(str(local_path), settings.aws_s3_challenges_bucket, s3_key)
+            self.track_upload(settings.aws_s3_challenges_bucket, s3_key)
             log.info(f"Uploaded {local_path.name} → {settings.aws_s3_challenges_bucket}/{s3_key}")
             return True
         except Exception as e:
@@ -72,6 +92,7 @@ class StorageClient:
                 Body=zip_buffer.getvalue(),
                 ContentType="application/zip",
             )
+            self.track_upload(settings.gold_masters_bucket, s3_key)
             log.info(
                 f"Uploaded gold master → {settings.gold_masters_bucket}/{s3_key} "
                 f"({files_added} files)"
@@ -136,6 +157,7 @@ class StorageClient:
             Body=zip_bytes,
             ContentType="application/zip",
         )
+        self.track_upload(settings.gold_masters_bucket, s3_key)
         log.info(
             f"Uploaded gold master → {settings.gold_masters_bucket}/{s3_key} "
             f"({files_added} entries)"
@@ -210,6 +232,7 @@ class StorageClient:
             Body=data,
             ContentType="application/zip",
         )
+        self.track_upload(bucket, s3_key)
         log.info(f"Uploaded bytes → {bucket}/{s3_key} ({len(data)} bytes)")
 
     def get_gold_master_source(

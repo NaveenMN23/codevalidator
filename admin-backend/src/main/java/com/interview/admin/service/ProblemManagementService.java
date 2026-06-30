@@ -94,71 +94,75 @@ public class ProblemManagementService {
         String domain = extractDomain(job.getDesignJson());
         List<String> tiers = job.getTiers();
         List<String> tags = buildTags(domain, job.getLanguages());
-        String language = (job.getLanguages() != null && !job.getLanguages().isEmpty())
-                ? job.getLanguages().get(0) : "node";
+        List<String> languages = (job.getLanguages() != null && !job.getLanguages().isEmpty())
+                ? job.getLanguages() : List.of("node");
 
         Map<String, String> blueprintsBySlug = extractBlueprints(job.getResultJson());
-
-        List<Map<String, Object>> scenarios = extractAllScenarios(job.getResultJson(), language);
-        if (scenarios.isEmpty()) {
-            String slug = uniqueSlug(challengeSlug);
-            String difficulty = (tiers != null && !tiers.isEmpty()) ? tiers.get(0).toUpperCase() : "EASY";
-            // S3 key format: {language}/{challengeSlug}.zip — must match what StorageClient uploads
-            String problemLink = language.toLowerCase() + "/" + challengeSlug + ".zip";
-            Problem p = Problem.create(slug, toTitleCase(slug.replace('-', ' ')), description, difficulty, problemLink, tags);
-            p.setTiers(tiers != null ? tiers : List.of());
-            p.setLanguage(language);
-            p.setTier((tiers != null && !tiers.isEmpty()) ? tiers.get(0) + "-scenario-1" : "easy-scenario-1");
-            p.setPublished(true);
-            Problem saved = problemRepository.save(p);
-            String bpJson = blueprintsBySlug.get(slug);
-            if (bpJson != null) {
-                try {
-                    ObjectNode bpNode = (ObjectNode) objectMapper.readTree(bpJson);
-                    bpNode.put("problemId", saved.getId().toString());
-                    bpNode.put("slug", saved.getSlug());
-                    saved.setBlueprint(objectMapper.writeValueAsString(bpNode));
-                    saved = problemRepository.save(saved);
-                } catch (Exception e) {
-                    log.error("Failed to inject IDs into blueprint for {}: {}", saved.getSlug(), e.getMessage());
-                    saved.setBlueprint(bpJson);
-                    saved = problemRepository.save(saved);
-                }
-            }
-            return List.of(saved);
-        }
-
         List<Problem> created = new ArrayList<>();
-        for (Map<String, Object> scenario : scenarios) {
-            String tag = (String) scenario.get("tag");
-            if (tag == null || tag.isBlank()) continue;
-            String tierStr = scenario.get("tier") instanceof String t ? t : "easy";
-            String difficulty = tierStr.toUpperCase();
-            String originalSlug = challengeSlug + "-" + tag;
-            String slug = uniqueSlug(originalSlug);
-            String title = toTitleCase(slug.replace('-', ' '));
-            String problemLink = language.toLowerCase() + "/" + originalSlug + ".zip";
-            Problem p = Problem.create(slug, title, description, difficulty, problemLink, tags);
-            p.setTiers(tiers != null ? tiers : List.of());
-            p.setLanguage(language);
-            p.setTier(tag);
-            p.setPublished(true);
-            String bpJson = blueprintsBySlug.get(challengeSlug + "-" + tag);
-            Problem saved = problemRepository.save(p);
-            if (bpJson != null) {
-                try {
-                    ObjectNode bpNode = (ObjectNode) objectMapper.readTree(bpJson);
-                    bpNode.put("problemId", saved.getId().toString());
-                    bpNode.put("slug", saved.getSlug());
-                    saved.setBlueprint(objectMapper.writeValueAsString(bpNode));
-                    saved = problemRepository.save(saved);
-                } catch (Exception e) {
-                    log.error("Failed to inject IDs into blueprint for {}: {}", saved.getSlug(), e.getMessage());
-                    saved.setBlueprint(bpJson);
-                    saved = problemRepository.save(saved);
+
+        for (String language : languages) {
+            List<Map<String, Object>> scenarios = extractAllScenarios(job.getResultJson(), language);
+            if (scenarios.isEmpty()) {
+                String originalSlug = challengeSlug + "-" + language.toLowerCase();
+                String slug = uniqueSlug(originalSlug);
+                String difficulty = (tiers != null && !tiers.isEmpty()) ? tiers.get(0).toUpperCase() : "EASY";
+                // S3 key format: {language}/{challengeSlug}.zip — must match what StorageClient uploads
+                String problemLink = language.toLowerCase() + "/" + challengeSlug + ".zip";
+                Problem p = Problem.create(slug, toTitleCase((challengeSlug + " " + language).replace('-', ' ')), description, difficulty, problemLink, tags);
+                p.setTiers(tiers != null ? tiers : List.of());
+                p.setLanguage(language);
+                p.setTier((tiers != null && !tiers.isEmpty()) ? tiers.get(0) + "-scenario-1" : "easy-scenario-1");
+                p.setPublished(false);
+                Problem saved = problemRepository.save(p);
+                String bpJson = blueprintsBySlug.get(slug);
+                if (bpJson != null) {
+                    try {
+                        ObjectNode bpNode = (ObjectNode) objectMapper.readTree(bpJson);
+                        bpNode.put("problemId", saved.getId().toString());
+                        bpNode.put("slug", saved.getSlug());
+                        saved.setBlueprint(objectMapper.writeValueAsString(bpNode));
+                        saved = problemRepository.save(saved);
+                    } catch (Exception e) {
+                        log.error("Failed to inject IDs into blueprint for {}: {}", saved.getSlug(), e.getMessage());
+                        saved.setBlueprint(bpJson);
+                        saved = problemRepository.save(saved);
+                    }
                 }
+                created.add(saved);
+                continue;
             }
-            created.add(saved);
+
+            for (Map<String, Object> scenario : scenarios) {
+                String tag = (String) scenario.get("tag");
+                if (tag == null || tag.isBlank()) continue;
+                String tierStr = scenario.get("tier") instanceof String t ? t : "easy";
+                String difficulty = tierStr.toUpperCase();
+                String originalSlug = challengeSlug + "-" + language.toLowerCase() + "-" + tag;
+                String slug = uniqueSlug(originalSlug);
+                String title = toTitleCase((challengeSlug + " " + language + " " + tag).replace('-', ' '));
+                String problemLink = language.toLowerCase() + "/" + challengeSlug + "-" + tag + ".zip";
+                Problem p = Problem.create(slug, title, description, difficulty, problemLink, tags);
+                p.setTiers(tiers != null ? tiers : List.of());
+                p.setLanguage(language);
+                p.setTier(tag);
+                p.setPublished(false);
+                String bpJson = blueprintsBySlug.get(challengeSlug + "-" + tag);
+                Problem saved = problemRepository.save(p);
+                if (bpJson != null) {
+                    try {
+                        ObjectNode bpNode = (ObjectNode) objectMapper.readTree(bpJson);
+                        bpNode.put("problemId", saved.getId().toString());
+                        bpNode.put("slug", saved.getSlug());
+                        saved.setBlueprint(objectMapper.writeValueAsString(bpNode));
+                        saved = problemRepository.save(saved);
+                    } catch (Exception e) {
+                        log.error("Failed to inject IDs into blueprint for {}: {}", saved.getSlug(), e.getMessage());
+                        saved.setBlueprint(bpJson);
+                        saved = problemRepository.save(saved);
+                    }
+                }
+                created.add(saved);
+            }
         }
         return created;
     }

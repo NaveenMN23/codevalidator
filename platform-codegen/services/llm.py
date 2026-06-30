@@ -81,8 +81,8 @@ class LLMClient:
         )
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=60),
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type(_TRANSIENT_ERRORS),
         reraise=True,
     )
@@ -114,8 +114,8 @@ class LLMClient:
         return response.choices[0].message.content
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=60),
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type(_TRANSIENT_ERRORS),
         reraise=True,
     )
@@ -152,8 +152,8 @@ class LLMClient:
         return response.choices[0].message.content
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=60),
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type(_TRANSIENT_ERRORS),
         reraise=True,
     )

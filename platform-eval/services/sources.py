@@ -30,10 +30,6 @@ def _filter_files(files: dict[str, str], blueprint: dict) -> dict[str, str]:
             relevant_paths.add(entry.get("path", ""))
         elif isinstance(entry, str):
             relevant_paths.add(entry)
-    target = blueprint.get("task", {}).get("targetFile", "")
-    if target:
-        relevant_paths.add(target)
-
     candidates = (
         {k: v for k, v in files.items() if k in relevant_paths}
         if relevant_paths
@@ -154,12 +150,13 @@ class SolutionSource:
         return {}
 
     def _resolve_s3(self, s3_url: str, blueprint: dict) -> dict[str, str]:
-        import urllib.request
-        # Convert s3:// → https URL (assumes public or pre-signed)
-        https_url = s3_url.replace("s3://", "https://s3.amazonaws.com/", 1)
-        log.info(f"Fetching gold-master from S3: {https_url}")
-        with urllib.request.urlopen(https_url, timeout=30) as resp:
-            zip_bytes = resp.read()
+        import boto3
+        without_scheme = s3_url[len("s3://"):]
+        bucket, _, key = without_scheme.partition("/")
+        client = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        log.info(f"Fetching gold-master from S3: {s3_url}")
+        obj = client.get_object(Bucket=bucket, Key=key)
+        zip_bytes = obj["Body"].read()
         file_map = _unzip_to_file_map(zip_bytes)
         return _filter_files(file_map, blueprint)
 

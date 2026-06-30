@@ -19,6 +19,14 @@ import java.util.Base64;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Recover;
+
+import com.interview.admin.repository.ProblemRepository;
+import com.interview.admin.model.Problem;
+
 @Service
 public class DockerImageService {
 
@@ -26,16 +34,30 @@ public class DockerImageService {
 
     private final S3Client s3Client;
     private final EcrClient ecrClient;
+    private final ProblemRepository problemRepository;
 
     @Value("${app.aws.s3.challenges-bucket:challenges-repo}")
     private String challengesBucket;
+    
+    @Value("${app.aws.s3.gold-masters-bucket:gold-masters}")
+    private String goldMastersBucket;
 
     @Value("${app.aws.ecr.repository-uri:}")
     private String ecrRepositoryUri;
 
-    public DockerImageService(S3Client s3Client, EcrClient ecrClient) {
+    public DockerImageService(S3Client s3Client, EcrClient ecrClient, ProblemRepository problemRepository) {
         this.s3Client = s3Client;
         this.ecrClient = ecrClient;
+        this.problemRepository = problemRepository;
+    }
+
+    public void deleteFromS3(String bucket, String s3Key) {
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(s3Key).build());
+            log.info("Deleted object from S3: {}/{}", bucket, s3Key);
+        } catch (Exception e) {
+            log.error("Failed to delete object from S3 {}/{}: {}", bucket, s3Key, e.getMessage());
+        }
     }
 
     /**
@@ -45,6 +67,7 @@ public class DockerImageService {
      * is stored locally only.
      */
     @Async
+    @Retryable(retryFor = Exception.class, maxAttempts = 3, backoff = @Backoff(delay = 5000, multiplier = 2.0))
     public void buildAndPush(String slug, String language, String s3Key) {
         if (!"java".equals(language) && !"python".equals(language) && !"node".equals(language)) {
             log.info("Skipping Docker image build for unsupported language '{}' (slug={})", language, slug);
@@ -63,14 +86,34 @@ public class DockerImageService {
                 log.warn("No dependency file found in scaffold ZIP {} for language {} — building plain image for {}", s3Key, language, slug);
             }
 
+            // Extract the sandbox-runner binary from classpath and copy to tmpDir
+            try (var is = getClass().getResourceAsStream("/sandbox-runner/sandbox-runner-bin")) {
+                if (is == null) {
+                    throw new RuntimeException("sandbox-runner-bin not found in classpath. Did you compile it?");
+                }
+                Path runnerPath = tmpDir.resolve("sandbox-runner-bin");
+                Files.copy(is, runnerPath);
+                runnerPath.toFile().setExecutable(true);
+            }
+
             Files.writeString(tmpDir.resolve("Dockerfile"), DockerfileTemplates.build(language, depFile != null));
 
             log.info("Building Docker image {} from scaffold {}", localTag, s3Key);
             runCommand(tmpDir, "docker", "build", "-t", localTag, ".");
             log.info("Docker image {} built successfully", localTag);
 
+            log.info("Validating Docker image {} — checking sandbox-runner health", localTag);
+            runCommand(null, "docker", "run", "--rm", localTag, "/bin/sh", "-c",
+                    "/usr/local/bin/sandbox-runner --port 8080 & sleep 4 && wget -qO- http://localhost:8080/health");
+            log.info("Docker image {} passed sandbox-runner health check", localTag);
+
             if (ecrRepositoryUri == null || ecrRepositoryUri.isBlank()) {
                 log.warn("ECR_REPOSITORY_URI not configured — image {} stored locally only", localTag);
+                problemRepository.findBySlug(slug).ifPresent(p -> {
+                    p.setPublished(true);
+                    problemRepository.save(p);
+                    log.info("Published problem '{}' after successful local build", slug);
+                });
                 return;
             }
 
@@ -82,11 +125,36 @@ public class DockerImageService {
             runCommand(null, "docker", "push", ecrTag);
             log.info("Pushed {} to ECR", ecrTag);
 
+            problemRepository.findBySlug(slug).ifPresent(p -> {
+                p.setPublished(true);
+                problemRepository.save(p);
+                log.info("Published problem '{}' after successful image build", slug);
+            });
+
         } catch (Exception e) {
             log.error("Failed to build/push Docker image for slug {}: {}", slug, e.getMessage(), e);
+            throw new RuntimeException("Docker build/push failed", e);
         } finally {
             deleteTempDir(tmpDir);
         }
+    }
+
+    @Recover
+    public void recoverBuildAndPush(Exception e, String slug, String language, String s3Key) {
+        log.error("Ultimate failure: Docker build/push for {} failed after 3 retries. Rolling back.", slug);
+        problemRepository.findBySlug(slug).ifPresent(p -> {
+            problemRepository.delete(p);
+            log.info("Rollback: Deleted problem '{}' from DB", slug);
+        });
+        
+        // s3Key is like "language/challengeSlug.zip" or "language/challengeSlug-scenario.zip"
+        deleteFromS3(challengesBucket, s3Key);
+        
+        // We also need to try to delete the gold master.
+        // It's saved as "language/challengeSlug-tier.zip".
+        // The exact key isn't perfectly identical to the challenge scenario in all cases,
+        // but if it's identical, this will catch it. If not, it might leave an orphan in gold-masters.
+        deleteFromS3(goldMastersBucket, s3Key);
     }
 
     private void authenticateDockerToEcr(String registry) throws IOException, InterruptedException {

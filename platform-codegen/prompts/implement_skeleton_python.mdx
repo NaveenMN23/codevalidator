@@ -183,6 +183,7 @@ Rules for all tiers:
     "models.py": "...",
     "schemas.py": "...",
     "auth.py": "...",
+    "tests/test_booking.py": "...",
     "requirements.txt": "fastapi\nuvicorn\nsqlalchemy\n...",
     "README-easy-cancel-booking.md": "scenario-specific README for easy-cancel-booking",
     "README-easy-create-booking.md": "scenario-specific README for easy-create-booking",
@@ -205,8 +206,9 @@ Rules for all tiers:
 3. **`requirements.txt`** — fastapi, uvicorn, sqlalchemy, pytest, httpx, pytest-asyncio, pydantic, pydantic-settings (HARD)
 4. **Realistic seed data** — 8-15 rows per table with edge-case values
 5. **Complete files** — no ellipsis, no `# TODO` except in stub docstrings
-6. **`stub_locations` keys must EXACTLY match `scenario_tag` values from `<scenarios>` input**
-7. **File counts are minimums** — EASY: 5-7; MEDIUM: 8-11; HARD: 12-16
+6. **Visible Tests** — MUST include at least one visible `pytest` test file (e.g., `tests/test_...`) containing at least ~5 basic starter tests so the student has a starting point.
+7. **`stub_locations` keys must EXACTLY match `scenario_tag` values from `<scenarios>` input**
+8. **File counts are minimums** — EASY: 5-7; MEDIUM: 8-11; HARD: 12-16
 
 ---
 

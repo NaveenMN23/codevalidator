@@ -31,9 +31,17 @@ class SkeletonOutput(BaseModel):
     def files_not_empty(cls, v: dict) -> dict:
         if not v:
             raise ValueError("files must not be empty")
+        
+        has_test = False
         for path, content in v.items():
             if not isinstance(content, str) or not content.strip():
                 raise ValueError(f"File {path!r} has empty content")
+            if "test" in path.lower() or path.startswith("src/test/"):
+                has_test = True
+                
+        if not has_test:
+            raise ValueError("CRITICAL ERROR: No test files found in the generated skeleton! You MUST include at least one fully implemented test file (e.g. src/test/java/... or test_...py or ...test.ts).")
+            
         return v
 
     @model_validator(mode="after")
@@ -83,6 +91,7 @@ class FunctionDeltaOutput(BaseModel):
     """
     function_body: str
     test_hidden: str
+    test_visible: str
     bug_code: str | None = None
 
     @field_validator("function_body")
@@ -97,6 +106,13 @@ class FunctionDeltaOutput(BaseModel):
     def test_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("test_hidden must not be empty")
+        return v
+
+    @field_validator("test_visible")
+    @classmethod
+    def visible_test_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("test_visible must not be empty")
         return v
 
 

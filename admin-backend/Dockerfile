@@ -1,8 +1,14 @@
+FROM golang:1.22-alpine AS go-build
+WORKDIR /app
+COPY src/main/resources/sandbox-runner/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -o sandbox-runner-bin main.go
+
 FROM maven:3.9.6-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 COPY pom.xml .
 RUN mvn -B dependency:go-offline
 COPY src ./src
+COPY --from=go-build /app/sandbox-runner-bin ./src/main/resources/sandbox-runner/sandbox-runner-bin
 RUN mvn -B clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine

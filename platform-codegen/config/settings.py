@@ -6,9 +6,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
     openai_temperature: float = 0.2
-    openai_max_tokens: int = 4096
-    openai_max_tokens_impl: int = 16384  # Phase 2a generates full file trees — needs higher limit
-    openai_max_tokens_test: int = 8192   # Phase 2b generates large test suites at HARD tier
+    openai_max_tokens: int = 2048
+    openai_max_tokens_impl: int = 8192  # Reduced from 16384 to avoid TPM limits
+    openai_max_tokens_test: int = 4096  # Reduced from 8192 to avoid TPM limits
 
     # Redis
     redis_host: str = "localhost"

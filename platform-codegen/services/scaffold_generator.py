@@ -14,9 +14,65 @@ from services.validators import (
 )
 from generator.engine import generator
 from services.few_shot_loader import load_few_shot_repos
+from services.compile_validator import compile_validator, CompileValidationError
 
 _SUPPORTED_LANGUAGES = {"node", "java", "python"}
 _TIERS = ("easy", "medium", "hard")
+
+
+def _test_file_path(java_source: str) -> str | None:
+    pkg = re.search(r"^\s*package\s+([\w.]+)\s*;", java_source, re.MULTILINE)
+    cls = re.search(r"\bpublic\s+class\s+(\w+)", java_source)
+    if not pkg or not cls:
+        return None
+    return f"src/test/java/{pkg.group(1).replace('.', '/')}/{cls.group(1)}.java"
+
+
+def _classify_compile_error(error_output: str) -> str:
+    if "does not exist" in error_output and "com.challenge" in error_output:
+        return (
+            "You generated code that imports from a package (e.g. com.challenge.dtos) "
+            "but never generated the corresponding Java files for that package. "
+            "Add ALL missing class files — every 'import com.challenge.X' must have "
+            "a corresponding generated file in your output."
+        )
+    if "cannot find symbol" in error_output:
+        if ": method" in error_output:
+            return (
+                "You called a method that does not exist in the class. "
+                "Check <stub_file_content> for the actual methods defined there. "
+                "Do not invent helper methods — implement the logic inline."
+            )
+        if ": class" in error_output and "com.challenge" in error_output:
+            return (
+                "You referenced a project class that does not exist in the skeleton. "
+                "Check <skeleton_classes> for the exact class names available. "
+                "Only reference classes listed there."
+            )
+        return (
+            "You used a class without importing it. "
+            "Add the missing import at the top of the file "
+            "(e.g. `import java.util.Optional;`, `import java.time.LocalDate;`, `import java.util.UUID;`)."
+        )
+    if "illegal start of expression" in error_output or "not a statement" in error_output:
+        return (
+            "Your code has a syntax error. "
+            "Check for unclosed braces, misplaced keywords, or incomplete statements."
+        )
+    return "Fix the compilation error shown above before returning the corrected JSON."
+
+
+def _skeleton_classes_summary(skeleton_files: dict[str, str]) -> str:
+    fqns = sorted(
+        m.group(1).replace("/", ".")
+        for path in skeleton_files
+        if (m := re.search(r"src/main/java/(.+)\.java$", path))
+    )
+    if not fqns:
+        return ""
+    lines = ["Available classes in this skeleton (ONLY reference these — do not invent class names):"]
+    lines += [f"  - {fqn}" for fqn in fqns]
+    return "\n".join(lines)
 
 
 def _replace_function_body(content: str, fn_name: str, new_body: str, language: str) -> str:
@@ -258,6 +314,48 @@ class ScaffoldGenerator:
                 tier_skeletons[tier] = skeleton
                 log.info(f"ScaffoldGenerator: Phase 2a done — lang={language}, tier={tier}, files={list(skeleton.files.keys())}")
 
+                # Validate the skeleton compiles before Phase 2b (catches missing DTO/model files)
+                skeleton_compile_attempt = 0
+                skeleton_compile_context = user_context
+                while True:
+                    try:
+                        compile_validator.validate_compilation(skeleton.files, language)
+                        log.info(f"ScaffoldGenerator: skeleton compiled OK — lang={language}, tier={tier}")
+                        break
+                    except CompileValidationError as e:
+                        if skeleton_compile_attempt >= 1:
+                            log.error(f"ScaffoldGenerator: skeleton compilation failed after 2 attempts for lang={language}, tier={tier}")
+                            raise
+                        skeleton_compile_attempt += 1
+                        hint = _classify_compile_error(str(e))
+                        log.warning(f"ScaffoldGenerator: skeleton compile failed — {hint}. Regenerating skeleton.")
+                        skeleton_compile_context = (
+                            f"{user_context}\n\n"
+                            f"Your previous skeleton failed to compile:\n{e}\n\n"
+                            f"How to fix: {hint}\n\n"
+                            f"Regenerate the complete skeleton with all missing files included."
+                        )
+                        raw_skeleton = llm_client.complete_json_cached(
+                            skeleton_system,
+                            skeleton_compile_context,
+                            label=f"skeleton-{language}-{tier}-compile-retry",
+                            max_tokens_override=settings.openai_max_tokens_impl,
+                        )
+                        skeleton = validate_with_correction(
+                            raw_skeleton,
+                            SkeletonOutput,
+                            lambda sys, usr, l=language, t=tier: llm_client.complete_json_cached(
+                                sys, usr,
+                                label=f"skeleton-{l}-{t}-compile-retry-schema",
+                                max_tokens_override=settings.openai_max_tokens_impl,
+                            ),
+                            skeleton_system,
+                            skeleton_compile_context,
+                            label=f"skeleton-{language}-{tier}-compile-retry-validate",
+                        )
+                        tier_skeletons[tier] = skeleton
+                        log.info(f"ScaffoldGenerator: skeleton regenerated — lang={language}, tier={tier}, files={list(skeleton.files.keys())}")
+
             # Phase 2b — Function deltas per scenario
             tier_deltas: dict[str, dict[str, FunctionDeltaOutput]] = {}
 
@@ -289,23 +387,50 @@ class ScaffoldGenerator:
                         f"<strip_description>{scenario.get('strip_description', '')}</strip_description>\n"
                         f"<stub_file>{stub_loc.file if stub_loc else ''}</stub_file>\n"
                         f"<stub_file_content>\n{stub_file_content}\n</stub_file_content>\n"
-                        f"<full_skeleton>\n{json.dumps(skeleton.files, indent=2)}\n</full_skeleton>"
+                        f"<full_skeleton>\n{json.dumps(skeleton.files, indent=2)}\n</full_skeleton>\n"
+                        f"<skeleton_classes>\n{_skeleton_classes_summary(skeleton.files)}\n</skeleton_classes>"
                     )
-                    log.info(f"ScaffoldGenerator: Phase 2b delta — lang={language}, scenario={tag}, tier={tier}, type={scenario_type}")
-                    raw_delta = llm_client.complete_json(
-                        function_system,
-                        user_context,
-                        label=f"function-{language}-{tag}",
-                        max_tokens_override=settings.openai_max_tokens_test,
-                    )
-                    delta: FunctionDeltaOutput = validate_with_correction(
-                        raw_delta,
-                        FunctionDeltaOutput,
-                        llm_client.complete_json,
-                        function_system,
-                        user_context,
-                        label=f"function-{language}-{tag}-validate",
-                    )
+                    delta_system = function_system
+                    delta_user_context = user_context
+                    attempt = 0
+                    max_attempts = 3
+                    delta = None
+                    
+                    while attempt <= max_attempts:
+                        raw_delta = llm_client.complete_json(
+                            delta_system,
+                            delta_user_context,
+                            label=f"function-{language}-{tag}-att{attempt}",
+                            max_tokens_override=settings.openai_max_tokens_test,
+                        )
+                        delta = validate_with_correction(
+                            raw_delta,
+                            FunctionDeltaOutput,
+                            llm_client.complete_json,
+                            delta_system,
+                            delta_user_context,
+                            label=f"function-{language}-{tag}-validate",
+                        )
+                        
+                        # Validate compilation for this delta specifically
+                        test_files = self._inject_all_deltas(skeleton.files, {tag: delta}, language, skeleton)
+                        safe_test_files = sanitizer.sanitize_generated_files(test_files)
+                        try:
+                            compile_validator.validate_compilation(safe_test_files, language)
+                            break # Success!
+                        except CompileValidationError as e:
+                            attempt += 1
+                            if attempt > max_attempts:
+                                log.error(f"ScaffoldGenerator: Delta compilation failed after {max_attempts} attempts for scenario={tag}")
+                                raise e
+                            log.warning(f"Delta compilation failed (attempt {attempt}): {e}. Sending compiler error to LLM for correction.")
+                            targeted_hint = _classify_compile_error(str(e))
+                            delta_user_context = (
+                                f"{user_context}\n\n"
+                                f"Your previous implementation caused a compilation error:\n{e}\n\n"
+                                f"How to fix: {targeted_hint}\n\n"
+                                f"Please return the corrected JSON with all issues resolved."
+                            )
                     tier_deltas[tier][tag] = delta
                     log.info(f"ScaffoldGenerator: Phase 2b done — lang={language}, scenario={tag}")
 
@@ -327,33 +452,43 @@ class ScaffoldGenerator:
                 test_hidden = {tag: d.test_hidden for tag, d in deltas.items()}
 
                 try:
+                    compile_validator.validate_compilation(safe_gold_master, language)
+                except CompileValidationError as e:
+                    error_msg = f"ScaffoldGenerator: compile validation failed tier={tier} lang={language}: {e}"
+                    log.error(error_msg)
+                    raise RuntimeError(error_msg)
+
+                try:
                     storage_client.upload_gold_master_from_dict(
                         safe_gold_master, test_hidden, manifest,
                         challenge_name, tier, language,
                     )
                     gold_master_s3_refs[tier] = f"s3://gold-masters/{language}/{challenge_name}-{tier}.zip"
                 except Exception as e:
-                    log.error(
-                        f"ScaffoldGenerator: gold master upload failed tier={tier} lang={language}: {e}. "
-                        f"Skipping scaffold ZIPs and blueprints for this tier."
-                    )
-                    failed_scaffolds.extend(
-                        [f"{language}/{s['scenario_tag']}" for s in tier_design["scenarios"]]
-                    )
-                    continue
+                    error_msg = f"ScaffoldGenerator: gold master upload failed tier={tier} lang={language}: {e}"
+                    log.error(error_msg)
+                    raise RuntimeError(error_msg)
 
                 safe_skeleton = sanitizer.sanitize_generated_files(skeleton.files)
                 for scenario in tier_design["scenarios"]:
                     tag = scenario["scenario_tag"]
                     try:
-                        zip_bytes = generator.generate_from_dict(safe_skeleton, tag, manifest, language)
+                        scaffold_files = dict(safe_skeleton)
+                        delta = tier_deltas[tier].get(tag)
+                        if delta and delta.test_visible:
+                            visible_path = _test_file_path(delta.test_visible)
+                            if visible_path:
+                                scaffold_files[visible_path] = delta.test_visible
+                                log.info(f"ScaffoldGenerator: added visible test → {visible_path}")
+                        zip_bytes = generator.generate_from_dict(scaffold_files, tag, manifest, language)
                         s3_key = f"{language}/{challenge_name}-{tag}.zip"
                         storage_client.upload_bytes(zip_bytes.getvalue(), settings.aws_s3_challenges_bucket, s3_key)
                         storage_client.export_scaffold_locally(zip_bytes.getvalue(), challenge_name, tag, language)
                         log.info(f"ScaffoldGenerator: uploaded scaffold → challenges/{s3_key}")
                     except Exception as e:
-                        log.error(f"ScaffoldGenerator: scaffold ZIP failed for scenario={tag} lang={language}: {e}")
-                        failed_scaffolds.append(f"{language}/{tag}")
+                        error_msg = f"ScaffoldGenerator: scaffold ZIP failed for scenario={tag} lang={language}: {e}"
+                        log.error(error_msg)
+                        raise RuntimeError(error_msg)
 
                 if not failed_scaffolds:
                     try:

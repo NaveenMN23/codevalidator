@@ -148,14 +148,15 @@ One JUnit 5 test file per scenario (keyed by scenario_tag):
 
 ## Implementation Requirements
 
-1. **Spring Boot 3 + Java 21** — records for DTOs
-2. **Spring Data JPA** with H2 in-memory for tests
+1. **Spring Boot 3 + Java 21** — records for DTOs. MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`).
+2. **Spring Data JPA** with H2 in-memory for tests. All `@Entity` classes MUST use Lombok `@Getter` and `@Setter` annotations (do not use `@Data` on entities, and do not leave `// Getters and setters...` comments).
 3. **Flyway** — seed 8-15 rows per table with edge-case data
 4. **`pom.xml`** — MUST include `<parent>` for `spring-boot-starter-parent` (e.g., version 3.2.0), and dependencies: spring-boot-starter-web, spring-boot-starter-data-jpa, h2, flyway-core, lombok, spring-boot-starter-test, spring-retry (for HARD)
-5. **Complete files** — no ellipsis, no `// TODO` except inside strip blocks
-6. **Working gold master** — compiles and all tests pass with strip blocks included
-7. **File counts are minimums** — EASY: 6-8; MEDIUM: 10-13; HARD: 15-18
-8. **Line counts are minimums** — stub files are not acceptable
+5. **Complete files** — no ellipsis, no `// TODO` except inside strip blocks. Never stub out methods or getters/setters.
+6. **Imports** — ALWAYS include all necessary imports, such as `java.util.UUID`, `java.util.List`, `java.util.Optional`, `java.util.Map`, `java.time.LocalDate`, `java.time.LocalDateTime`, etc., at the top of your Java files. If you use a class like `UUID`, `Optional`, or `LocalDate`, you MUST import it. Repository methods returning `Optional<T>` MUST have `import java.util.Optional;`.
+7. **Working gold master** — compiles and all tests pass with strip blocks included
+8. **File counts are minimums** — EASY: 6-8; MEDIUM: 10-13; HARD: 15-18
+9. **Line counts are minimums** — stub files are not acceptable
 
 ---
 

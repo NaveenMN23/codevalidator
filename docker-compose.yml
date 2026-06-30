@@ -194,6 +194,7 @@ services:
   java-executor-build:
     build:
       context: ./platform-execution_service/executors/java
+      dockerfile: Dockerfile
     image: platform/java-executor:latest
     command: echo "Java executor image built"
 

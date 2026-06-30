@@ -29,8 +29,68 @@ def _format_focus_areas(areas: list[dict]) -> str:
     for a in areas:
         area = a.get("area", "")
         scope = a.get("scope", "")
-        hint = a.get("hint", "")
-        lines.append(f"- {area}: {scope}" + (f" (hint: {hint})" if hint else ""))
+        probe = a.get("probeQuestion", "")
+        indicator = a.get("goodAnswerIndicator", "")
+        line = f"- {area}: {scope}"
+        if probe:
+            line += f"\n  Probe question: {probe}"
+        if indicator:
+            line += f"\n  Strong answer looks like: {indicator}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _format_edge_cases(cases: list) -> str:
+    if not cases:
+        return "(none specified)"
+    lines = []
+    for c in cases:
+        if isinstance(c, dict):
+            case = c.get("case", "")
+            handling = c.get("expectedHandling", "")
+            followup = c.get("followUpIfMissed")
+            line = f"- {case}"
+            if handling:
+                line += f"\n  Expected: {handling}"
+            if followup:
+                line += f"\n  Ask if missed: {followup}"
+        else:
+            line = f"- {c}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _format_approaches(approaches: list[dict]) -> str:
+    if not approaches:
+        return "(none specified)"
+    lines = []
+    for a in approaches:
+        approach = a.get("approach", "")
+        tradeoff = a.get("tradeoff", "")
+        rating = a.get("rating", "")
+        line = f"- {approach}"
+        if tradeoff:
+            line += f" — {tradeoff}"
+        if rating:
+            line += f" (expected score: {rating})"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _format_scale_up(dimensions: list) -> str:
+    if not dimensions:
+        return "(none specified)"
+    lines = []
+    for d in dimensions:
+        if isinstance(d, dict):
+            dim = d.get("dimension", "")
+            trigger = d.get("triggerCondition", "")
+            line = f"- {dim}"
+            if trigger:
+                line += f" [trigger: {trigger}]"
+        else:
+            line = f"- {d}"
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -115,17 +175,23 @@ def build_code_submission_messages(
 ) -> tuple[str, str]:
     """Returns (system_prompt, user_message) for a CODE_SUBMISSION turn."""
     task = blueprint.get("task", {})
-    rubric = blueprint.get("evaluation", {}).get("rubric", "Evaluate correctness and efficiency.")
-    focus_areas = blueprint.get("followUpContext", {}).get("interviewerFocusAreas", [])
-    scale_up = blueprint.get("followUpContext", {}).get("scaleUpDimensions", [])
+    evaluation = blueprint.get("evaluation", {})
+    follow_up_ctx = blueprint.get("followUpContext", {})
+    rubric = evaluation.get("rubric", "Evaluate correctness and efficiency.")
+    focus_areas = follow_up_ctx.get("interviewerFocusAreas", [])
+    scale_up = follow_up_ctx.get("scaleUpDimensions", [])
     expected_complexity = task.get("expectedComplexity", {})
-    common_mistakes = blueprint.get("evaluation", {}).get("commonMistakes", [])
+    common_mistakes = evaluation.get("commonMistakes", [])
+    seniority_signals = evaluation.get("senioritySignals", [])
+    expected_approaches = follow_up_ctx.get("expectedApproaches", [])
+    known_edge_cases = follow_up_ctx.get("knownEdgeCases", [])
 
     # System prompt: stable prefix (persona + blueprint + gold-master)
     system_prompt = f"""{_PERSONA}
 
 === TASK ===
 Description: {task.get('description', 'N/A')}
+Language: {task.get('language', 'N/A')}
 Constraints: {json.dumps(task.get('constraints', []))}
 Expected complexity: {json.dumps(expected_complexity)}
 Difficulty: {difficulty}
@@ -133,11 +199,20 @@ Difficulty: {difficulty}
 === RUBRIC ===
 {rubric}
 
+=== SENIORITY SIGNALS ===
+{json.dumps(seniority_signals)}
+
 === INTERVIEWER FOCUS AREAS ===
 {_format_focus_areas(focus_areas)}
 
+=== EXPECTED APPROACHES ===
+{_format_approaches(expected_approaches)}
+
+=== KNOWN EDGE CASES ===
+{_format_edge_cases(known_edge_cases)}
+
 === SCALE-UP DIMENSIONS ===
-{json.dumps(scale_up)}
+{_format_scale_up(scale_up)}
 
 === COMMON MISTAKES TO PROBE ===
 {json.dumps(common_mistakes)}

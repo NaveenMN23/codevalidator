@@ -179,6 +179,7 @@ Rules for all tiers:
     "src/index.ts": "complete file content",
     "src/db.ts": "complete file content",
     "src/handlers/bookings.ts": "...",
+    "tests/booking.test.ts": "...",
     "package.json": "...",
     "tsconfig.json": "...",
     "README-easy-cancel-booking.md": "scenario-specific README for easy-cancel-booking",
@@ -197,15 +198,16 @@ Rules for all tiers:
 
 ## Implementation Requirements
 
-1. **Complete files** — syntactically valid TypeScript everywhere. No ellipsis, no `// TODO` except in stub JSDoc steps.
-2. **All non-target functions FULLY implemented** — the skeleton compiles and runs; only stub functions throw.
+1. **Complete files** — syntactically valid TypeScript everywhere. MUST include ALL necessary imports (e.g., `import { NotFoundException } from '../exceptions/NotFoundException';`). No ellipsis, no `// TODO` except in stub JSDoc steps.
+2. **All non-target functions FULLY implemented** — the skeleton compiles without ANY TS errors; only stub functions throw.
 3. **Fastify + better-sqlite3** — synchronous sqlite3 API.
 4. **Realistic seed data** — 8-15 rows per table with values that exercise edge cases.
-5. **`package.json`** — fastify, better-sqlite3, @types/better-sqlite3, typescript, tsx, @types/node.
+5. **`package.json`** — fastify@^4.28.1, better-sqlite3@^11.1.2, @types/better-sqlite3, typescript@^5.4.5, tsx, @types/node. YOU ABSOLUTELY MUST generate `package.json` and `tsconfig.json` in the `files` object.
 6. **`tsconfig.json`** — target ES2022, module CommonJS, strict mode.
-7. **File counts are minimums** — EASY: 5-7; MEDIUM: 9-12; HARD: 14-17. Never go below.
-8. **Line counts are minimums** — stub files (< 40 lines of real logic) are not acceptable.
-9. **`stub_locations` keys must EXACTLY match `scenario_tag` values from `<scenarios>` input.**
+7. **Visible Tests** — MUST include at least one visible test file (e.g., `tests/...` or `__tests__/...`) containing at least ~5 basic starter tests so the student has a starting point.
+8. **File counts are minimums** — EASY: 5-7; MEDIUM: 9-12; HARD: 14-17. Never go below.
+9. **Line counts are minimums** — stub files (< 40 lines of real logic) are not acceptable.
+10. **`stub_locations` keys must EXACTLY match `scenario_tag` values from `<scenarios>` input.**
 
 ---
 
