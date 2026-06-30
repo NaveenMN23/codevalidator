@@ -1,6 +1,6 @@
 import json
 from config.settings import settings
-from infrastructure.cache import cache_client
+from infrastructure import db as db_client
 from infrastructure.logger import log
 from infrastructure.queue import queue_publisher
 from infrastructure.storage import storage_client
@@ -55,7 +55,8 @@ class BlueprintService:
             return blueprint
 
         gold_master_source = {}
-        for rel_path in relevant_files:
+        for entry in relevant_files:
+            rel_path = entry.get("path", entry) if isinstance(entry, dict) else entry
             if rel_path in source_files:
                 gold_master_source[rel_path] = source_files[rel_path]
             else:
@@ -74,6 +75,7 @@ class BlueprintService:
         scenario_tag: str,
         source_files: dict | None = None,
         manifest: dict | None = None,
+        gold_master_s3_ref: str | None = None,
     ) -> dict:
         """Generate a scenario-specific blueprint.
 
@@ -108,8 +110,8 @@ class BlueprintService:
         raw = llm_client.complete_json_cached(system, user, label=f"blueprint:{scenario_tag}")
         blueprint = json.loads(raw)
         blueprint["problemId"] = problem_id
-
-        blueprint = self._embed_gold_master_source(blueprint, source_files)
+        if gold_master_s3_ref:
+            blueprint["goldMasterRef"] = gold_master_s3_ref
         return blueprint
 
     def generate_all_scenarios(
@@ -118,11 +120,16 @@ class BlueprintService:
         language: str,
         manifest: dict,
         problem_id: str | None = None,
+        gold_master_s3_refs: dict[str, str] | None = None,
     ) -> list[dict]:
         """Generate one blueprint per scenario in the manifest.
 
         Fetches gold master source once per tier (3 MinIO calls for 9 scenarios).
         Within a tier, all N blueprint calls share the same source context — prefix cache hit.
+
+        gold_master_s3_refs: optional {tier: "s3://gold-masters/{lang}/{name}-{tier}.zip"}
+            passed in from scaffold_generator so blueprints carry goldMasterRef without
+            an extra S3 round-trip.
         """
         blueprints = []
         tiers_fetched: dict[str, dict] = {}
@@ -143,10 +150,12 @@ class BlueprintService:
                 continue
 
             pid = problem_id or f"{challenge_name}-{scenario_tag}"
+            gm_ref = (gold_master_s3_refs or {}).get(tier)
             bp = self.generate_for_scenario(
                 pid, challenge_name, language, scenario_tag,
                 source_files=source_files,
                 manifest=manifest,
+                gold_master_s3_ref=gm_ref,
             )
             blueprints.append(bp)
 
@@ -170,31 +179,26 @@ class BlueprintService:
     def dispatch(self, blueprint: dict):
         """Persist a blueprint via two independent paths.
 
-        1. Redis — written directly from codegen so AI eval always has the data,
-           regardless of backend availability.
-        2. RabbitMQ — durable message for the backend to consume and write to Postgres.
-           If the backend is down, the message waits in the queue until it recovers.
+        1. Postgres — direct write to problems.blueprint by slug.
+        2. RabbitMQ — durable message for the backend to optionally consume.
         """
         if not blueprint:
             return
 
         problem_id = blueprint.get("problemId", "")
 
-        redis_key = f"blueprint:{problem_id}"
+        # 1. Write directly to problems.blueprint
         try:
-            cache_client.set(redis_key, json.dumps(blueprint), expire=60 * 60 * 24 * 365)
-            log.info(f"Blueprint cached in Redis: {redis_key}")
+            db_client.save_blueprint(problem_id, blueprint)
         except Exception as e:
-            log.error(f"Failed to write blueprint to Redis for {problem_id}: {e}")
+            log.warning(f"[blueprint] DB write failed for {problem_id} (non-fatal): {e}")
 
+        # 2. RabbitMQ — backend may consume this for its own storage
         try:
             queue_publisher.publish(settings.blueprint_queue, blueprint)
-            log.info(f"Blueprint queued for persistence: {problem_id}")
+            log.info(f"[blueprint] Queued for persistence: {problem_id}")
         except Exception as e:
-            log.warning(
-                f"Failed to queue blueprint for {problem_id} "
-                f"(blueprint is in Redis — AI eval will still work): {e}"
-            )
+            log.warning(f"[blueprint] Queue publish failed for {problem_id}: {e}")
 
 
 blueprint_service = BlueprintService()

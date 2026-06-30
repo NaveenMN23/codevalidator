@@ -26,7 +26,9 @@ def _handle_design_preview(job_id: str, body: dict) -> None:
 
 def _handle_full_generate(job_id: str, body: dict) -> None:
     from services.scaffold_generator import scaffold_generator
+    from infrastructure.storage import storage_client
     try:
+        storage_client.reset_tracker()
         result = scaffold_generator.generate(
             problem_description=body["prompt"],
             languages=body.get("languages", ["node"]),
@@ -35,9 +37,15 @@ def _handle_full_generate(job_id: str, body: dict) -> None:
             debug_scenarios_per_tier=body.get("debugScenariosPerTier", 1),
             design_json=body.get("designJson"),
         )
+        
+        failed_scaffolds = result.get("warnings", {}).get("failed_scaffolds", [])
+        if failed_scaffolds:
+            raise RuntimeError(f"Code generation failed compilation for scaffolds: {failed_scaffolds}")
+            
         result_publisher.publish(job_id, "FULL_GENERATE", "COMPLETED", result)
     except Exception as e:
         log.error(f"FULL_GENERATE failed for job {job_id}: {e}")
+        storage_client.rollback_uploads()
         result_publisher.publish(job_id, "FULL_GENERATE", "FAILED", str(e))
 
 
@@ -70,7 +78,7 @@ def _connect_and_consume():
         credentials=credentials,
         connection_attempts=3,
         retry_delay=2,
-        heartbeat=60,
+        heartbeat=300,
     )
     conn = pika.BlockingConnection(params)
     ch = conn.channel()

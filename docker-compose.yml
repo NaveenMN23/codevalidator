@@ -1,50 +1,17 @@
 services:
-  minio:
-    image: minio/minio
-    container_name: interview_minio
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  minio-setup:
-    image: minio/mc
-    container_name: interview_minio_setup
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio:9000 admin password;
-      /usr/bin/mc mb myminio/challenges || true;
-      /usr/bin/mc mb myminio/gold-masters || true;
-      /usr/bin/mc anonymous set download myminio/challenges;
-      exit 0;
-      "
-
   postgres:
     image: postgres:16-alpine
     container_name: interview_postgres
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: interview_db
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: ${DB_NAME:-interview_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d interview_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-interview_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -66,8 +33,8 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: interview_rabbitmq
     environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: password
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-password}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -85,16 +52,17 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/interview_db
-      SPRING_DATASOURCE_USERNAME: admin
-      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-interview_db}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-admin}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-password}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: admin
-      SPRING_RABBITMQ_PASSWORD: password
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      AWS_REGION: ${AWS_REGION:-ap-southeast-2}
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-password}
+      EXECUTION_SERVICE_URL: http://execution-service:8001
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_S3_CHALLENGES_BUCKET: ${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
       AWS_S3_GOLD_MASTERS_BUCKET: ${AWS_S3_GOLD_MASTERS_BUCKET:-gold-masters}
       ECS_CLUSTER_ARN: ${ECS_CLUSTER_ARN:-}
@@ -124,28 +92,63 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_S3_CHALLENGES_BUCKET=${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
+      - GOLD_MASTERS_BUCKET=${GOLD_MASTERS_BUCKET:-gold-masters}
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=admin
       - MINIO_SECRET_KEY=password
       - REDIS_HOST=redis
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.2}
       - ENABLE_BLUEPRINT_GENERATION=${ENABLE_BLUEPRINT_GENERATION:-true}
       - ENABLE_LLM=${ENABLE_LLM:-true}
-      - LOCAL_EXPORT_PATH=/generated
+      - LOCAL_EXPORT_PATH=${LOCAL_EXPORT_PATH:-/generated}
+      - REDIS_HOST=redis
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=admin
-      - RABBITMQ_PASSWORD=password
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-password}
       - CODEGEN_REQUEST_QUEUE=codegen-request-queue
       - CODEGEN_RESULTS_QUEUE=codegen-results-queue
+      - POSTGRES_DSN=${POSTGRES_DSN:-postgresql://admin:password@postgres:5432/interview_db}
+      - EXECUTION_SERVICE_URL=http://execution-service:8001
     volumes:
       - ./generated:/generated
     depends_on:
       - backend
-      - minio
       - redis
       - rabbitmq
+      - execution-service
+      - postgres
+
+  platform-eval:
+    build: ./platform-eval
+    container_name: platform_eval
+    ports:
+      - "8002:8002"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_DSN=${POSTGRES_DSN:-postgresql://admin:password@postgres:5432/interview_db}
+      - SESSION_TTL_SECONDS=5400
+      - STORE_BACKEND=postgres
+      - ENABLE_LLM=${ENABLE_LLM:-true}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+    volumes:
+      - ./platform-eval/blueprint:/blueprint:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   admin-backend:
     build: ./admin-backend
@@ -153,14 +156,19 @@ services:
     ports:
       - "8081:8081"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/interview_db
-      SPRING_DATASOURCE_USERNAME: admin
-      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-interview_db}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-admin}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-password}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: admin
-      SPRING_RABBITMQ_PASSWORD: password
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-password}
       JWT_SECRET: ${JWT_SECRET:-change-this-to-a-long-random-secret-in-production}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      ECR_REPOSITORY_URI: ${ECR_REPOSITORY_URI}
+      AWS_S3_CHALLENGES_BUCKET: ${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,6 +178,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   admin-ui:
     build: ./admin-ui
@@ -187,9 +197,34 @@ services:
     depends_on:
       - backend
 
+  # Builds the Java executor image with the base Spring Boot dependency tree
+  # baked into the local Maven repo via `mvn dependency:go-offline`.
+  java-executor-build:
+    build:
+      context: ./platform-execution_service/executors/java
+      dockerfile: Dockerfile
+    image: platform/java-executor:latest
+    command: echo "Java executor image built"
+
+  execution-service:
+    build: ./platform-execution_service
+    container_name: platform_execution_service
+    ports:
+      - "8001:8001"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-ap-southeast-2}
+      - AWS_S3_CHALLENGES_BUCKET=${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/sessions:/tmp/sessions
+      - ./challenges:/challenges:ro
+    depends_on:
+      java-executor-build:
+        condition: service_completed_successfully
 
 volumes:
-  minio_data:
   postgres_data:
   redis_data:
   rabbitmq_data:

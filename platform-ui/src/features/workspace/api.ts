@@ -106,7 +106,11 @@ export async function runChallenge(challengeId: string, files: Record<string, st
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ files }),
   });
-  if (!response.ok) throw new Error(`Run failed (HTTP ${response.status})`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const detail = body?.stderr || body?.detail || `HTTP ${response.status}`;
+    throw new Error(detail);
+  }
   return response.json();
 }
 

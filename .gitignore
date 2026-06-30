@@ -59,6 +59,7 @@ minio_data/
 *.sqlite
 
 # Challenge Artifacts (Dynamic)
+challenges/
 challenges/*/dist/
 challenges/**/*.zip
 
@@ -71,3 +72,8 @@ challenges/**/*.zip
 .turbo
 
 platform-codegen/few_shots
+
+generated/
+
+.claude
+.serena

@@ -2,6 +2,7 @@ package com.interview.admin.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.interview.admin.dto.PageResponse;
 import com.interview.admin.dto.ProblemRequest;
 import com.interview.admin.dto.ProblemResponse;
@@ -31,10 +32,12 @@ public class ProblemManagementService {
 
     private final ProblemRepository problemRepository;
     private final ObjectMapper objectMapper;
+    private final DockerImageService dockerImageService;
 
-    public ProblemManagementService(ProblemRepository problemRepository, ObjectMapper objectMapper) {
+    public ProblemManagementService(ProblemRepository problemRepository, ObjectMapper objectMapper, DockerImageService dockerImageService) {
         this.problemRepository = problemRepository;
         this.objectMapper = objectMapper;
+        this.dockerImageService = dockerImageService;
     }
 
     @Retryable(retryFor = DataAccessException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2.0))
@@ -91,38 +94,95 @@ public class ProblemManagementService {
         String domain = extractDomain(job.getDesignJson());
         List<String> tiers = job.getTiers();
         List<String> tags = buildTags(domain, job.getLanguages());
-        String problemLink = "/challenges/" + challengeSlug;
-        String language = (job.getLanguages() != null && !job.getLanguages().isEmpty())
-                ? job.getLanguages().get(0) : "node";
+        List<String> languages = (job.getLanguages() != null && !job.getLanguages().isEmpty())
+                ? job.getLanguages() : List.of("node");
 
-        List<Map<String, Object>> scenarios = extractAllScenarios(job.getResultJson(), language);
-        if (scenarios.isEmpty()) {
-            String slug = uniqueSlug(challengeSlug);
-            String difficulty = (tiers != null && !tiers.isEmpty()) ? tiers.get(0).toUpperCase() : "EASY";
-            Problem p = Problem.create(slug, toTitleCase(slug.replace('-', ' ')), description, difficulty, problemLink, tags);
-            p.setTiers(tiers != null ? tiers : List.of());
-            p.setLanguage(language);
-            p.setTier((tiers != null && !tiers.isEmpty()) ? tiers.get(0) + "-scenario-1" : "easy-scenario-1");
-            p.setPublished(true);
-            return List.of(problemRepository.save(p));
-        }
-
+        Map<String, String> blueprintsBySlug = extractBlueprints(job.getResultJson());
         List<Problem> created = new ArrayList<>();
-        for (Map<String, Object> scenario : scenarios) {
-            String tag = (String) scenario.get("tag");
-            if (tag == null || tag.isBlank()) continue;
-            String tierStr = scenario.get("tier") instanceof String t ? t : "easy";
-            String difficulty = tierStr.toUpperCase();
-            String slug = uniqueSlug(challengeSlug + "-" + tag);
-            String title = toTitleCase(slug.replace('-', ' '));
-            Problem p = Problem.create(slug, title, description, difficulty, problemLink, tags);
-            p.setTiers(tiers != null ? tiers : List.of());
-            p.setLanguage(language);
-            p.setTier(tag);
-            p.setPublished(true);
-            created.add(problemRepository.save(p));
+
+        for (String language : languages) {
+            List<Map<String, Object>> scenarios = extractAllScenarios(job.getResultJson(), language);
+            if (scenarios.isEmpty()) {
+                String originalSlug = challengeSlug + "-" + language.toLowerCase();
+                String slug = uniqueSlug(originalSlug);
+                String difficulty = (tiers != null && !tiers.isEmpty()) ? tiers.get(0).toUpperCase() : "EASY";
+                // S3 key format: {language}/{challengeSlug}.zip — must match what StorageClient uploads
+                String problemLink = language.toLowerCase() + "/" + challengeSlug + ".zip";
+                Problem p = Problem.create(slug, toTitleCase((challengeSlug + " " + language).replace('-', ' ')), description, difficulty, problemLink, tags);
+                p.setTiers(tiers != null ? tiers : List.of());
+                p.setLanguage(language);
+                p.setTier((tiers != null && !tiers.isEmpty()) ? tiers.get(0) + "-scenario-1" : "easy-scenario-1");
+                p.setPublished(false);
+                Problem saved = problemRepository.save(p);
+                String bpJson = blueprintsBySlug.get(slug);
+                if (bpJson != null) {
+                    try {
+                        ObjectNode bpNode = (ObjectNode) objectMapper.readTree(bpJson);
+                        bpNode.put("problemId", saved.getId().toString());
+                        bpNode.put("slug", saved.getSlug());
+                        saved.setBlueprint(objectMapper.writeValueAsString(bpNode));
+                        saved = problemRepository.save(saved);
+                    } catch (Exception e) {
+                        log.error("Failed to inject IDs into blueprint for {}: {}", saved.getSlug(), e.getMessage());
+                        saved.setBlueprint(bpJson);
+                        saved = problemRepository.save(saved);
+                    }
+                }
+                created.add(saved);
+                continue;
+            }
+
+            for (Map<String, Object> scenario : scenarios) {
+                String tag = (String) scenario.get("tag");
+                if (tag == null || tag.isBlank()) continue;
+                String tierStr = scenario.get("tier") instanceof String t ? t : "easy";
+                String difficulty = tierStr.toUpperCase();
+                String originalSlug = challengeSlug + "-" + language.toLowerCase() + "-" + tag;
+                String slug = uniqueSlug(originalSlug);
+                String title = toTitleCase((challengeSlug + " " + language + " " + tag).replace('-', ' '));
+                String problemLink = language.toLowerCase() + "/" + challengeSlug + "-" + tag + ".zip";
+                Problem p = Problem.create(slug, title, description, difficulty, problemLink, tags);
+                p.setTiers(tiers != null ? tiers : List.of());
+                p.setLanguage(language);
+                p.setTier(tag);
+                p.setPublished(false);
+                String bpJson = blueprintsBySlug.get(challengeSlug + "-" + tag);
+                Problem saved = problemRepository.save(p);
+                if (bpJson != null) {
+                    try {
+                        ObjectNode bpNode = (ObjectNode) objectMapper.readTree(bpJson);
+                        bpNode.put("problemId", saved.getId().toString());
+                        bpNode.put("slug", saved.getSlug());
+                        saved.setBlueprint(objectMapper.writeValueAsString(bpNode));
+                        saved = problemRepository.save(saved);
+                    } catch (Exception e) {
+                        log.error("Failed to inject IDs into blueprint for {}: {}", saved.getSlug(), e.getMessage());
+                        saved.setBlueprint(bpJson);
+                        saved = problemRepository.save(saved);
+                    }
+                }
+                created.add(saved);
+            }
         }
         return created;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> extractBlueprints(String resultJson) {
+        if (resultJson == null) return Map.of();
+        try {
+            Map<String, Object> result = objectMapper.readValue(resultJson, new TypeReference<>() {});
+            Object blueprints = result.get("blueprints");
+            if (!(blueprints instanceof Map<?, ?> bpMap)) return Map.of();
+            Map<String, String> out = new java.util.HashMap<>();
+            for (Map.Entry<?, ?> entry : bpMap.entrySet()) {
+                out.put(String.valueOf(entry.getKey()), objectMapper.writeValueAsString(entry.getValue()));
+            }
+            return out;
+        } catch (Exception e) {
+            log.warn("Could not extract blueprints from resultJson: {}", e.getMessage());
+            return Map.of();
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -228,5 +288,11 @@ public class ProblemManagementService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
         problem.setPublished(published);
         return ProblemResponse.from(problemRepository.save(problem));
+    }
+
+    public void buildImage(UUID id) {
+        Problem problem = problemRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
+        dockerImageService.buildAndPush(problem.getSlug(), problem.getLanguage(), problem.getProblemLink());
     }
 }

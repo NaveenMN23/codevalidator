@@ -8,8 +8,8 @@ import { FileExplorer } from './FileExplorer';
 import { FeedbackDisplay } from './FeedbackDisplay';
 import {
   Play, Send, RefreshCcw, LayoutGrid, BookOpen,
-  ArrowLeft, ChevronUp, ChevronDown, Terminal as TerminalIcon,
-  RotateCcw, Sparkles, AlertTriangle
+  ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Terminal as TerminalIcon,
+  RotateCcw, Sparkles, Sun, Moon, AlertTriangle
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
 import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge, openWorkspaceSession } from '../api';
@@ -37,10 +37,11 @@ function hashFiles(flatFiles: Record<string, string>): string {
 export function Workspace() {
   const { challengeId } = useParams<{ challengeId: string }>();
   const navigate = useNavigate();
-  const { user, theme } = useAppStore();
+  const { user, theme, setTheme } = useAppStore();
   
   const [files, setFiles] = useState<FileTree | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [terminal, setTerminal] = useState<any>(null);
   const [isBooting, setIsBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -51,8 +52,9 @@ export function Workspace() {
   const [gradingResult, setGradingResult] = useState<GradingResult | null>(null);
   const [challengeMeta, setChallengeMeta] = useState<any>(null);
   const [showExplorer, setShowExplorer] = useState(true);
+  const [showExplorerPanel, setShowExplorerPanel] = useState(true);
   const [showTerminal, setShowTerminal] = useState(true);
-  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'explorer' | 'feedback'>('problem');
+  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'feedback'>('problem');
   const [timeLeft, setTimeLeft] = useState(3600); // 60 minutes default
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -338,6 +340,20 @@ export function Workspace() {
     }
   }, [selectedFile]);
 
+  const handleFileSelect = (path: string) => {
+    setSelectedFile(path);
+    setOpenFiles(prev => prev.includes(path) ? prev : [...prev, path]);
+  };
+
+  const handleFileClose = (path: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = openFiles.filter(f => f !== path);
+    setOpenFiles(next);
+    if (selectedFile === path) {
+      setSelectedFile(next.length > 0 ? next[next.length - 1] : null);
+    }
+  };
+
   useEffect(() => {
     if (gradingResult) {
       setActiveLeftTab('feedback');
@@ -365,10 +381,10 @@ export function Workspace() {
 
   if (isBooting) {
     return (
-      <div className="flex h-full items-center justify-center bg-background text-text-muted">
+      <div className="flex h-full items-center justify-center bg-white">
         <div className="flex flex-col items-center gap-4">
-          <RefreshCcw className="animate-spin text-primary" size={40} />
-          <p className="animate-pulse">Booting your environment...</p>
+          <RefreshCcw className="animate-spin text-black" size={40} />
+          <p className="animate-pulse text-gray-500">Booting your environment...</p>
         </div>
       </div>
     );
@@ -395,7 +411,7 @@ export function Workspace() {
                 {formatTime(timeLeft)}
               </span>
             </div>
-            <button 
+            <button
               onClick={() => setShowExplorer(!showExplorer)}
               className={`p-1.5 rounded transition-all ${showExplorer ? 'bg-background border border-border-main text-primary shadow-sm shadow-primary/5' : 'hover:bg-black/5 dark:hover:bg-white/5 text-text-muted border border-transparent'}`}
               title={showExplorer ? "Hide Sidebar" : "Show Sidebar"}
@@ -420,15 +436,22 @@ export function Workspace() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button 
+          <button
+            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all"
+            title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+          >
+            {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+          </button>
+          <button
             onClick={handleReset}
             disabled={isBooting}
-            className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all mr-1"
+            className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all"
             title="Reset to Boilerplate"
           >
             <RotateCcw size={14} />
           </button>
-          <button 
+          <button
             onClick={handleRun}
             disabled={isRunning}
             className="flex items-center gap-1.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-text-main text-[11px] font-bold px-3 py-1.5 rounded border border-border-main transition-all disabled:opacity-50"
@@ -436,10 +459,10 @@ export function Workspace() {
             <Play size={12} className={isRunning ? 'animate-pulse text-primary fill-primary' : 'text-primary fill-primary'} />
             {isRunning ? 'Running...' : 'Run Tests'}
           </button>
-          <button 
+          <button
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white text-[11px] font-bold px-3 py-1.5 rounded transition-all disabled:opacity-50 shadow-lg shadow-primary/20"
+            className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-background text-[11px] font-bold px-3 py-1.5 rounded transition-all disabled:opacity-50"
           >
             <Send size={12} />
             {isSubmitting ? 'Submitting...' : 'Submit'}
@@ -458,22 +481,15 @@ export function Workspace() {
           <div className={`flex flex-col bg-panel border-r border-border-main overflow-hidden transition-all min-h-0 ${!showExplorer ? 'hidden' : ''}`}>
             {/* Tabs - Smaller */}
             <div className="flex bg-background shrink-0 border-b border-border-main">
-              <button 
+              <button
                 onClick={() => setActiveLeftTab('problem')}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'problem' ? 'border-primary text-primary bg-background' : 'border-transparent text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'}`}
               >
                 <BookOpen size={12} />
                 Problem
               </button>
-              <button 
-                onClick={() => setActiveLeftTab('explorer')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'explorer' ? 'border-primary text-primary bg-background' : 'border-transparent text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'}`}
-              >
-                <LayoutGrid size={12} />
-                Files
-              </button>
               {gradingResult && (
-                <button 
+                <button
                   onClick={() => setActiveLeftTab('feedback')}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'feedback' ? 'border-primary text-primary bg-background' : 'border-transparent text-primary hover:bg-primary/5 animate-pulse'}`}
                 >
@@ -488,24 +504,62 @@ export function Workspace() {
                 <div className="h-full overflow-y-auto p-4 prose dark:prose-invert prose-xs max-w-none scrollbar-thin selection:bg-primary/30">
                   <ReactMarkdown>{readmeContent || challengeMeta?.description || 'No description provided.'}</ReactMarkdown>
                 </div>
-              ) : activeLeftTab === 'explorer' ? (
-                <FileExplorer 
-                  files={files || {}} 
-                  selectedFile={selectedFile} 
-                  onSelect={setSelectedFile} 
-                />
               ) : (
-                <div className="h-full overflow-y-auto p-4 scrollbar-thin">
-                  <FeedbackDisplay result={gradingResult!} />
+                <div className="flex flex-col h-full min-h-0">
+                  <div className="flex-grow overflow-y-auto min-h-0 scrollbar-thin">
+                    <FeedbackDisplay result={gradingResult!} />
+                  </div>
+                  <div className="border-t border-border-main p-3 shrink-0 bg-panel">
+                    <input
+                      placeholder="Ask a follow-up question..."
+                      className="w-full text-xs bg-background border border-border-main rounded-lg px-3 py-2 text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
+                    />
+                  </div>
                 </div>
               )}
             </div>
           </div>
 
           {/* Editor & Terminal Area */}
-          <div className="flex flex-col min-w-0 bg-background min-h-0 relative overflow-hidden">
-            <div className="flex-grow flex flex-col min-h-0 overflow-hidden">
-              <Split 
+          <div className="flex flex-row min-w-0 min-h-0 overflow-hidden">
+
+            {/* Expand strip — shown when explorer is hidden */}
+            {!showExplorerPanel && (
+              <div
+                onClick={() => setShowExplorerPanel(true)}
+                className="w-6 shrink-0 flex items-center justify-center border-r border-border-main bg-panel hover:bg-white/10 cursor-pointer transition-all"
+                title="Show Explorer"
+              >
+                <ChevronRight size={14} className="text-text-main opacity-70 hover:opacity-100" />
+              </div>
+            )}
+
+            {/* File Explorer Panel — fixed width, collapsible, outside vertical Split */}
+            {showExplorerPanel && (
+              <div className="w-56 shrink-0 flex flex-col border-r border-border-main bg-panel overflow-hidden">
+                <div className="h-8 px-3 flex items-center justify-between border-b border-border-main shrink-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-text-muted">Explorer</span>
+                  <button
+                    onClick={() => setShowExplorerPanel(false)}
+                    className="p-0.5 rounded hover:bg-white/10 text-text-muted hover:text-text-main transition-all"
+                    title="Hide Explorer"
+                  >
+                    <ChevronLeft size={13} />
+                  </button>
+                </div>
+                <div className="flex-grow overflow-hidden">
+                  <FileExplorer
+                    files={files || {}}
+                    selectedFile={selectedFile}
+                    onSelect={handleFileSelect}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Editor + Terminal — vertical Split */}
+            <div className="flex flex-col flex-grow min-w-0 min-h-0 relative overflow-hidden">
+              <Split
                 direction="vertical"
                 sizes={showTerminal ? [70, 30] : [100, 0]}
                 minSize={showTerminal ? [200, 100] : [0, 0]}
@@ -513,12 +567,35 @@ export function Workspace() {
                 className="flex flex-col h-full min-h-0 split-vertical"
               >
                 {/* Editor Section */}
-                <div className="relative flex flex-col min-h-0 bg-background overflow-hidden border-b border-border-main">
-                  <div className="h-8 bg-panel border-b border-border-main flex items-center px-4 shrink-0 justify-between">
-                    <span className="text-[10px] text-text-muted font-mono flex items-center gap-2">
-                      {selectedFile || 'Select a file'}
-                    </span>
+                <div className="flex flex-col min-h-0 bg-background overflow-hidden">
+                  {/* Tab bar — VS Code style */}
+                  <div className="flex bg-elevated border-b border-border-main shrink-0 overflow-x-auto">
+                    {openFiles.length === 0 ? (
+                      <span className="px-4 py-2 text-[11px] text-text-muted font-mono">Select a file</span>
+                    ) : (
+                      openFiles.map(file => (
+                        <button
+                          key={file}
+                          onClick={() => setSelectedFile(file)}
+                          className={`flex items-center gap-2 px-4 py-1.5 text-[12px] font-mono border-r border-border-main shrink-0 transition-all group ${
+                            selectedFile === file
+                              ? 'bg-background text-text-main border-t border-t-primary'
+                              : 'bg-elevated text-text-muted hover:bg-panel hover:text-text-main'
+                          }`}
+                        >
+                          {file.split('/').pop()}
+                          <span
+                            role="button"
+                            onClick={(e) => handleFileClose(file, e)}
+                            className="opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-text-main rounded px-0.5 hover:bg-white/10 leading-none text-[14px]"
+                          >
+                            ×
+                          </span>
+                        </button>
+                      ))
+                    )}
                   </div>
+                  {/* Monaco Editor */}
                   <div className="flex-grow overflow-hidden relative">
                     <Editor
                       height="100%"
@@ -551,14 +628,14 @@ export function Workspace() {
                     />
                   </div>
                 </div>
-                
+
                 {/* Terminal Section */}
                 <div className={`terminal-container bg-background border-t border-border-main z-20 ${!showTerminal ? 'hidden' : ''}`}>
                   <div className="h-7 border-b border-border-main bg-panel flex items-center px-3 shrink-0 justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-text-muted font-black uppercase tracking-widest">Terminal</span>
                     </div>
-                    <button 
+                    <button
                       onClick={() => setShowTerminal(false)}
                       className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all"
                       title="Hide Terminal"
@@ -571,24 +648,24 @@ export function Workspace() {
                   </div>
                 </div>
               </Split>
-            </div>
 
-            {/* Floating Terminal Bar (only when hidden) */}
-            {!showTerminal && (
-              <div className="h-8 border-t border-border-main bg-panel flex items-center px-3 shrink-0 justify-between absolute bottom-0 left-0 right-0 z-20">
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] text-text-muted font-black uppercase tracking-widest">Terminal</span>
+              {/* Floating Terminal Bar (only when hidden) */}
+              {!showTerminal && (
+                <div className="h-8 border-t border-border-main bg-panel flex items-center px-3 shrink-0 justify-between absolute bottom-0 left-0 right-0 z-20">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-text-muted font-black uppercase tracking-widest">Terminal</span>
+                  </div>
+                  <button
+                    onClick={() => setShowTerminal(true)}
+                    className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all flex items-center gap-1"
+                    title="Show Terminal"
+                  >
+                    <TerminalIcon size={12} />
+                    <ChevronUp size={14} />
+                  </button>
                 </div>
-                <button 
-                  onClick={() => setShowTerminal(true)}
-                  className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted transition-all flex items-center gap-1"
-                  title="Show Terminal"
-                >
-                  <TerminalIcon size={12} />
-                  <ChevronUp size={14} />
-                </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </Split>
       </div>

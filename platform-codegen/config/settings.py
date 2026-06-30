@@ -6,19 +6,18 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
     openai_temperature: float = 0.2
-    openai_max_tokens: int = 4096
-    openai_max_tokens_impl: int = 16384  # Phase 2a generates full file trees — needs higher limit
-    openai_max_tokens_test: int = 8192   # Phase 2b generates large test suites at HARD tier
+    openai_max_tokens: int = 2048
+    openai_max_tokens_impl: int = 8192  # Reduced from 16384 to avoid TPM limits
+    openai_max_tokens_test: int = 4096  # Reduced from 8192 to avoid TPM limits
 
     # Redis
     redis_host: str = "localhost"
     redis_port: int = 6379
 
-    # MinIO / S3
-    minio_endpoint: str = "http://localhost:9000"
-    minio_access_key: str = "admin"
-    minio_secret_key: str = "password"
-    minio_bucket: str = "challenges"
+    # Storage — AWS S3 (boto3 default credential chain: env vars → IAM role)
+    aws_s3_challenges_bucket: str = "challenges-repo"  # maps to AWS_S3_CHALLENGES_BUCKET
+    gold_masters_bucket: str = "gold-masters"           # maps to GOLD_MASTERS_BUCKET
+    aws_region: str = "us-east-1"
 
     # RabbitMQ
     rabbitmq_host: str = "localhost"
@@ -32,6 +31,9 @@ class Settings(BaseSettings):
     # Backend
     backend_url: str = "http://platform-backend:8080"
 
+    # Postgres (blueprint persistence)
+    postgres_dsn: str = "postgresql://admin:password@localhost:5432/interview_db"
+
     # Local export (dev only — bind-mount path; empty = disabled)
     local_export_path: str = ""
 
@@ -42,6 +44,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 settings = Settings()

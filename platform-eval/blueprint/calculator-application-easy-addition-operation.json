@@ -1,0 +1,81 @@
+{
+  "problemId": "calculator-application-easy-addition-operation",
+  "task": {
+    "title": "Implement Addition Operation",
+    "description": "The `add` method in `CalculatorService` has a broken implementation — the function body is not properly indented, causing a SyntaxError. The student must fix the indentation, ensure `Calculation` is imported, use `CalculationRepository` to persist the result, and return the sum.",
+    "difficulty": "EASY",
+    "targetRole": "JUNIOR_TO_MID",
+    "language": "Python",
+    "framework": "FastAPI",
+    "concurrencyRequired": false
+  },
+  "repo": {
+    "entrypoint": "src/index.py",
+    "relevantFiles": [
+      { "path": "src/services/CalculatorService.py", "role": "FILE_TO_FIX" },
+      { "path": "src/controllers/CalculatorController.py", "role": "REFERENCE" },
+      { "path": "src/repositories/CalculationRepository.py", "role": "DEPENDENCY" },
+      { "path": "src/models/Calculation.py", "role": "DEPENDENCY" },
+      { "path": "src/exceptions/InvalidOperationException.py", "role": "REFERENCE" },
+      { "path": "src/dtos/CalculationDTO.py", "role": "REFERENCE" }
+    ]
+  },
+  "bugMeta": {
+    "location": "src/services/CalculatorService.py",
+    "description": "The body of the `add` method (validation, computation, repository save, return) is at module scope instead of inside the method — Python indentation error.",
+    "correctBehavior": "POST /add with valid floats returns {operand1, operand2, operation: 'add', result: sum}; invalid inputs return HTTP 400.",
+    "brokenBehavior": "Importing CalculatorService raises SyntaxError / IndentationError, crashing the entire application on startup.",
+    "type": "SYNTAX_BUG"
+  },
+  "evaluation": {
+    "rubric": "Assess whether the student correctly identifies the indentation issue, fixes the method body, imports the Calculation model, uses CalculationRepository, and handles invalid inputs. Award higher marks for using InvalidOperationException over raw ValueError and for noticing the unused imports pattern.",
+    "passCriteria": [
+      "POST /add returns the correct sum for two valid numbers",
+      "The result is persisted via CalculationRepository",
+      "Invalid (non-numeric) inputs raise an appropriate error resulting in HTTP 400"
+    ],
+    "commonMistakes": [
+      "Forgetting to import Calculation from src.models.Calculation",
+      "Using a bare `if` chain instead of `elif/else` for validation branches",
+      "Raising ValueError instead of InvalidOperationException (a custom exception already exists in the project)",
+      "Not calling CalculationRepository.save() — leaving persistence broken",
+      "Hardcoding operation='add' correctly but getting the Calculation constructor argument order wrong"
+    ]
+  },
+  "followUpContext": {
+    "interviewerFocusAreas": [
+      {
+        "area": "Python indentation and syntax awareness",
+        "scope": "Can the student quickly recognise that the entire method body is at module scope and fix it? Do they understand why Python raises IndentationError vs SyntaxError?"
+      },
+      {
+        "area": "Codebase exploration — custom exceptions",
+        "scope": "Does the student notice `InvalidOperationException` already exists? A senior candidate uses it; a junior reinvents ValueError or ignores the existing exception."
+      },
+      {
+        "area": "Repository pattern adherence",
+        "scope": "Does the student use `CalculationRepository.save()` or skip persistence entirely? Skipping persistence passes GET tests but breaks audit/history requirements."
+      },
+      {
+        "area": "Type-safe guard robustness",
+        "scope": "The isinstance check guards against non-numeric input. Would the student handle bool subclass edge cases (bool is a subclass of int in Python)? Senior candidates note this."
+      }
+    ],
+    "expectedApproaches": [
+      "Fix indentation, add `from src.models.Calculation import Calculation`, call save, return result",
+      "Replace ValueError with InvalidOperationException to match project conventions",
+      "Leave ValueError (acceptable at junior level since the README asks for it explicitly)"
+    ],
+    "knownEdgeCases": [
+      "bool inputs: `True + False == 1` — isinstance(True, int) is True in Python",
+      "Very large floats causing precision loss (not expected to be handled at EASY level)",
+      "Passing None — should raise the invalid-input error, not an AttributeError"
+    ],
+    "scaleUpDimensions": [
+      "Add concurrent request handling to CalculationRepository",
+      "Replace in-memory repository with a real DB-backed one (SQLAlchemy)",
+      "Implement all four operations with a single dispatch table instead of if/elif chains"
+    ],
+    "followUpIntent": "Probe whether the student reads existing project code before writing their own, and whether they understand Python's indentation model deeply enough to explain why the bug manifests as it does."
+  }
+}

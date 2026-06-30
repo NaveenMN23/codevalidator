@@ -98,15 +98,15 @@ class ChallengeGenerator:
         stub_patterns = {
             "node": (
                 f"throw new Error('not implemented: {scenario_tag}');",
-                "// TODO: implement this function",
+                "// TODO: implement this function\n        throw new Error('Unimplemented method');",
             ),
             "java": (
                 f'throw new UnsupportedOperationException("not implemented: {scenario_tag}");',
-                "// TODO: implement this method",
+                '// TODO: implement this method\n        throw new UnsupportedOperationException("Unimplemented method");',
             ),
             "python": (
                 f'raise NotImplementedError("not implemented: {scenario_tag}")',
-                "# TODO: implement this function",
+                '# TODO: implement this function\n        raise NotImplementedError("Unimplemented method")',
             ),
         }
         target_stub, todo = stub_patterns.get(language, stub_patterns["node"])

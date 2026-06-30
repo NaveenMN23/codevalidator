@@ -118,10 +118,10 @@ export function Dashboard() {
 
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', background: '#f4f4f6' }}>
+      <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-          <RefreshCcw className="animate-spin" style={{ color: '#2563eb' }} size={36} />
-          <p style={{ color: '#6b7280', fontSize: 14, margin: 0 }}>Loading challenges...</p>
+          <RefreshCcw className="animate-spin" style={{ color: 'var(--accent-color)' }} size={36} />
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: 0 }}>Loading challenges...</p>
         </div>
       </div>
     );
@@ -129,7 +129,7 @@ export function Dashboard() {
 
   if (error) {
     return (
-      <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', background: '#f4f4f6' }}>
+      <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
         <p style={{ color: '#ef4444', fontSize: 14 }}>Failed to load challenges. Make sure the backend is running.</p>
       </div>
     );
@@ -142,26 +142,26 @@ export function Dashboard() {
       <aside style={{
         width: 260,
         flexShrink: 0,
-        background: '#ffffff',
-        borderRight: '1px solid #e5e7eb',
+        background: 'var(--bg-panel)',
+        borderRight: '1px solid var(--border-main)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
       }}>
         {/* Header + language filter */}
-        <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid var(--border-main)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               Challenges
             </span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#2563eb', background: '#eff6ff', padding: '2px 8px', borderRadius: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-color)', background: 'var(--bg-elevated)', padding: '2px 8px', borderRadius: 12 }}>
               {filteredGroups.length}
             </span>
           </div>
           <select
             value={langFilter}
             onChange={e => { setLangFilter(e.target.value); setSelectedBase(null); setShuffledList(null); }}
-            style={{ width: '100%', padding: '6px 10px', fontSize: 12, color: '#374151', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer', outline: 'none' }}
+            style={{ width: '100%', padding: '6px 10px', fontSize: 12, color: 'var(--text-main)', background: 'var(--bg-elevated)', border: '1px solid var(--border-main)', borderRadius: 6, cursor: 'pointer', outline: 'none' }}
           >
             <option value="ALL">All Languages</option>
             {languages.map(lang => (
@@ -173,7 +173,7 @@ export function Dashboard() {
         {/* Challenge name list */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
           {filteredGroups.length === 0 ? (
-            <p style={{ padding: 16, fontSize: 12, color: '#9ca3af', textAlign: 'center', margin: 0 }}>No challenges found</p>
+            <p style={{ padding: 16, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', margin: 0 }}>No challenges found</p>
           ) : (
             filteredGroups.map(g => {
               const isActive = selectedBase === g.baseName;
@@ -187,9 +187,9 @@ export function Dashboard() {
                     alignItems: 'center',
                     gap: 10,
                     padding: '9px 16px',
-                    background: isActive ? '#eff6ff' : 'transparent',
+                    background: isActive ? 'var(--bg-elevated)' : 'transparent',
                     border: 'none',
-                    borderLeft: isActive ? '2px solid #2563eb' : '2px solid transparent',
+                    borderLeft: isActive ? '2px solid var(--accent-color)' : '2px solid transparent',
                     cursor: 'pointer',
                     textAlign: 'left',
                   }}
@@ -199,7 +199,7 @@ export function Dashboard() {
                     background: DIFF_META[g.hardestDiff].color,
                     flexShrink: 0, display: 'inline-block',
                   }} />
-                  <span style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? '#1d4ed8' : '#111827' }}>
+                  <span style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--accent-color)' : 'var(--text-main)' }}>
                     {g.displayTitle}
                   </span>
                 </button>
@@ -210,7 +210,7 @@ export function Dashboard() {
       </aside>
 
       {/* ── Main Content ── */}
-      <main style={{ flex: 1, background: '#f4f4f6', overflowY: 'auto', padding: 32 }}>
+      <main style={{ flex: 1, background: 'var(--bg-main)', overflowY: 'auto', padding: 32 }}>
         {!selectedGroup ? (
           /* Default: all problems grid */
           <>
@@ -229,9 +229,9 @@ export function Dashboard() {
                         fontSize: 13,
                         fontWeight: 500,
                         borderRadius: 20,
-                        border: active ? `1.5px solid ${meta.color}` : '1.5px solid #e5e7eb',
-                        background: active ? meta.bg : '#ffffff',
-                        color: active ? meta.color : '#6b7280',
+                        border: active ? `1.5px solid ${meta.color}` : '1.5px solid var(--border-main)',
+                        background: active ? meta.bg : 'var(--bg-panel)',
+                        color: active ? meta.color : 'var(--text-muted)',
                         cursor: 'pointer',
                       }}
                     >
@@ -243,7 +243,7 @@ export function Dashboard() {
               {/* Shuffle button */}
               <button
                 onClick={() => setShuffledList(shuffleArray(baseFiltered))}
-                style={{ padding: '6px 16px', fontSize: 13, fontWeight: 500, borderRadius: 20, border: '1.5px solid #111', background: '#fff', color: '#111', cursor: 'pointer' }}
+                style={{ padding: '6px 16px', fontSize: 13, fontWeight: 500, borderRadius: 20, border: '1.5px solid var(--border-main)', background: 'var(--bg-panel)', color: 'var(--text-main)', cursor: 'pointer' }}
               >
                 ⇄ Shuffle
               </button>
@@ -251,10 +251,10 @@ export function Dashboard() {
 
             {displayProblems.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-                <p style={{ fontSize: 14, color: '#9ca3af', margin: 0 }}>No problems match your filters.</p>
+                <p style={{ fontSize: 14, color: 'var(--text-muted)', margin: 0 }}>No problems match your filters.</p>
                 <button
                   onClick={() => { setDiffFilters(new Set()); setShuffledList(null); }}
-                  style={{ marginTop: 12, fontSize: 13, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                  style={{ marginTop: 12, fontSize: 13, color: 'var(--accent-color)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
                 >
                   Clear filters
                 </button>
@@ -265,18 +265,18 @@ export function Dashboard() {
                   const upper = c.difficulty.toUpperCase() as DiffKey;
                   const meta = DIFF_META[upper] ?? DIFF_META.EASY;
                   return (
-                    <div key={c.id} style={{ background: '#fff', borderRadius: 10, border: '1px solid #e5e7eb', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', margin: 0 }}>{c.title}</h3>
+                    <div key={c.id} style={{ background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--border-main)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>{c.title}</h3>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: meta.color, background: meta.bg, border: `1px solid ${meta.border}`, padding: '2px 8px', borderRadius: 12 }}>
                           {meta.label}
                         </span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: 12 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '2px 8px', borderRadius: 12 }}>
                           {c.language}
                         </span>
                       </div>
                       {c.description && (
-                        <p style={{ fontSize: 13, color: '#6b7280', margin: 0, lineHeight: 1.5 }}>
+                        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
                           {c.description.length > 100 ? c.description.slice(0, 100) + '…' : c.description}
                         </p>
                       )}
@@ -295,18 +295,18 @@ export function Dashboard() {
         ) : (
           /* Challenge detail: tiers + scenarios */
           <>
-            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
               <button
                 onClick={() => setSelectedBase(null)}
-                style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 12, padding: 0, fontWeight: 500 }}
+                style={{ background: 'none', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', fontSize: 12, padding: 0, fontWeight: 500 }}
               >
                 Challenges
               </button>
-              <span style={{ margin: '0 6px', color: '#9ca3af' }}>›</span>
+              <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>›</span>
               <span>{selectedGroup.displayTitle}</span>
             </div>
 
-            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: '0 0 28px' }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-main)', margin: '0 0 28px' }}>
               {selectedGroup.displayTitle}
             </h2>
 
@@ -321,13 +321,13 @@ export function Dashboard() {
                     <span style={{ fontSize: 12, fontWeight: 700, color: meta.color, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                       {meta.label}
                     </span>
-                    <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
+                    <div style={{ flex: 1, height: 1, background: 'var(--border-main)' }} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {items.map((c, idx) => (
-                      <div key={c.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#111827', flex: 1 }}>Scenario {idx + 1}</span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', background: '#f3f4f6', padding: '3px 10px', borderRadius: 12 }}>
+                      <div key={c.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-main)', borderRadius: 8, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)', flex: 1 }}>Scenario {idx + 1}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '3px 10px', borderRadius: 12 }}>
                           {c.language}
                         </span>
                         <button
@@ -344,7 +344,7 @@ export function Dashboard() {
             })}
 
             {DIFF_ORDER.every(d => !selectedGroup.difficulties[d]?.length) && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#9ca3af', fontSize: 14 }}>
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: 14 }}>
                 No scenarios available yet.
               </div>
             )}

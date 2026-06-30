@@ -43,7 +43,7 @@ public class AdminSecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/v1/admin/auth/**", "/actuator/health", "/actuator/info", "/error").permitAll()
+                        .requestMatchers("/api/v1/admin/auth/**", "/api/v1/admin/problems/*/build-image", "/actuator/health", "/actuator/info", "/error").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

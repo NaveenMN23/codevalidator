@@ -52,7 +52,13 @@ public class ProblemService {
 
     public Map<String, String> getProblemFiles(UUID id) {
         Problem problem = self.findProblemEntity(id);
-        return challengeStorageService.fetchFiles(problem.getId(), problem.getProblemLink());
+        String s3Key = problem.getProblemLink();
+        if (s3Key == null || s3Key.isBlank()) {
+            // Fallback for legacy data without problem_link
+            String language = problem.getLanguage() != null ? problem.getLanguage().toLowerCase() : "python";
+            s3Key = language + "/" + problem.getSlug() + ".zip";
+        }
+        return challengeStorageService.fetchFiles(problem.getId(), s3Key);
     }
 
     @CircuitBreaker(name = "database")

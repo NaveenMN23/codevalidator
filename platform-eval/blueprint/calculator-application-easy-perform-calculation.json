@@ -1,0 +1,107 @@
+{
+  "problemId": "calculator-application-easy-perform-calculation",
+  "sessionId": "uuid-supplied-at-runtime",
+  "task": {
+    "taskType": "FEATURE_IMPLEMENTATION",
+    "title": "Calculator: Perform a Calculation",
+    "description": "The perform_calculation() function body is missing. Implement it to execute basic arithmetic operations (addition, subtraction, multiplication, division) based on the input operation string and return the numeric result. Raise ZeroDivisionError when dividing by zero; raise InvalidOperationException for any unsupported operation string.",
+    "constraints": [
+      "Raise ZeroDivisionError when operation is 'divide' and operand2 is 0",
+      "Raise InvalidOperationException for any operation not in {add, subtract, multiply, divide}",
+      "Return the exact numeric result as a float",
+      "Do not catch and silently swallow exceptions — propagate them so the controller can map them to HTTP 400"
+    ],
+    "difficulty": "EASY",
+    "targetRole": "SDE-1",
+    "language": "Python",
+    "framework": "FastAPI",
+    "expectedComplexity": { "time": "O(1)", "space": "O(1)" },
+    "concurrencyRequired": false
+  },
+  "repo": {
+    "targetFile": "src/services/CalculatorService.py",
+    "relevantFiles": [
+      { "path": "src/services/CalculatorService.py", "role": "TARGET" },
+      { "path": "src/controllers/CalculatorController.py", "role": "CALLER" },
+      { "path": "src/dtos/CalculationDTO.py", "role": "SCHEMA" },
+      { "path": "src/exceptions/InvalidOperationException.py", "role": "EXCEPTION" },
+      { "path": "src/repositories/CalculationRepository.py", "role": "STUB" },
+      { "path": "src/models/Calculation.py", "role": "MODEL" }
+    ]
+  },
+  "bugMeta": null,
+  "evaluation": {
+    "senioritySignals": [
+      "Uses elif/else or a dispatch dict — never bare if branches that all evaluate on every call",
+      "Guards against divide-by-zero explicitly (if operand2 == 0: raise) before performing the division — proactive rather than reactive",
+      "Raises InvalidOperationException (the domain exception) for unknowns — not ValueError or bare Exception",
+      "Notices that CalculationRepository is a stub and the result is never persisted — mentions the audit-trail gap without being prompted",
+      "Dispatch-dict approach: articulates the extensibility trade-off vs if/elif readability"
+    ],
+    "commonMistakes": [
+      "Returns 0 or None silently on division by zero instead of raising",
+      "Raises ValueError or bare Exception instead of InvalidOperationException for unsupported operations",
+      "Uses bare if for every branch — all four conditions evaluate on every call, and no else covers the unknown-operation path",
+      "Catches Python's ZeroDivisionError and re-raises a different or incorrect exception type",
+      "Treats CalculationRepository as irrelevant background noise — misses the persistence gap entirely"
+    ],
+    "rubric": {
+      "correctness": {
+        "9-10": "All four operations correct; ZeroDivisionError raised explicitly for divide-by-zero; InvalidOperationException raised for unknowns; no silent fallback",
+        "7-8": "Happy path + both exceptions present; one minor gap (e.g. wrong exception type for divide-by-zero, or missing explicit zero guard)",
+        "4-6": "Basic arithmetic works but one constraint missing — e.g. no invalid-operation guard, or silently returns 0 on divide-by-zero",
+        "1-3": "Incomplete or fundamentally wrong — missing branches, wrong return type, or swallows exceptions"
+      },
+      "efficiency": {
+        "9-10": "O(1) single-dispatch; no redundant branch evaluation; candidate names the complexity and verbalises the trade-off vs if/elif",
+        "7-8": "Correct but uses a bare-if chain that evaluates all branches on every call; does not mention the inefficiency",
+        "4-6": "Works but skips any complexity discussion",
+        "1-3": "Obvious anti-pattern introduced or irrelevant inefficiency"
+      }
+    }
+  },
+  "followUpContext": {
+    "interviewerFocusAreas": [
+      {
+        "area": "CORRECTNESS",
+        "scope": "Exception contract — does the exception type matter? Walk through what happens in the controller if InvalidOperationException is thrown for divide-by-zero vs ZeroDivisionError — the controller catches them separately, so swapping types would break the HTTP mapping."
+      },
+      {
+        "area": "EXTENSIBILITY",
+        "scope": "Adding a fifth operation such as modulo or power — how many lines change in a bare-if chain vs a dispatch dict? Which pattern is safer when two engineers add operations in parallel?"
+      },
+      {
+        "area": "DESIGN",
+        "scope": "CalculationRepository is a stub — the result is computed but never stored. What would a complete history/audit-trail implementation look like, and how would it change the service signature (e.g. injecting a db session)?"
+      }
+    ],
+    "expectedApproaches": [
+      {
+        "approach": "if/elif/else chain with explicit divide-by-zero guard inside the divide branch",
+        "tradeoff": "Readable and idiomatic for small fixed operation sets; adding a new operation requires editing the chain inline; all branches are explicit and easy to grep"
+      },
+      {
+        "approach": "Dispatch dict {operation: callable} with guard-then-call pattern",
+        "tradeoff": "O(1) lookup; trivially extensible by adding one dict entry; the divide handler must be a named function (not a lambda) to cleanly raise ZeroDivisionError; slightly less obvious for junior readers"
+      }
+    ],
+    "knownEdgeCases": [
+      "operand2 = 0 with operation = 'divide' — must raise ZeroDivisionError, not return 0 or None",
+      "operand2 = 0.0 (float zero) — same guard must trigger as for integer 0",
+      "Unsupported operation string: 'modulo', 'power', empty string, None coerced to string",
+      "operand1 = 0 divided by operand2 = 0 — ZeroDivisionError wins; not a silent 0",
+      "Very large floats — Python handles overflow to inf; worth flagging if candidate mentions it",
+      "Floating-point imprecision: 0.1 + 0.2 does not equal 0.3 exactly — probe if candidate mentions this"
+    ],
+    "scaleUpDimensions": [
+      "Persist each calculation to the database via CalculationRepository for full audit history",
+      "Support complex expression parsing (infix strings like '3 + 4 * 2') via a proper Shunting-Yard or AST parser",
+      "Pluggable operation registry: third-party code registers new operations at startup without forking the service"
+    ],
+    "followUpIntent": {
+      "type": "EVALUATOR_DECIDES",
+      "hint": "If candidate used bare-if branches, probe the redundant evaluation and ask how they'd add modulo. If they used a dispatch dict, skip extensibility and go straight to the missing CalculationRepository persistence gap. If they noticed and commented on the stub unprompted, jump to expression parsing as the scale-up discussion.",
+      "minimumTimeRemainingSeconds": 600
+    }
+  }
+}

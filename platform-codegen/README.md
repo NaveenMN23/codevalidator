@@ -130,8 +130,10 @@ MinIO buckets:
 | `OPENAI_MAX_TOKENS_TEST` | `8192` | Max tokens for Phase 2b (tests) |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
-| `MINIO_ENDPOINT` | `http://localhost:9000` | MinIO endpoint |
-| `MINIO_BUCKET` | `challenges` | Public scaffold bucket |
+| `AWS_ACCESS_KEY_ID` | — | AWS credentials (boto3 default chain) |
+| `AWS_SECRET_ACCESS_KEY` | — | AWS credentials (boto3 default chain) |
+| `AWS_REGION` | `us-east-1` | AWS region |
+| `AWS_S3_CHALLENGES_BUCKET` | `challenges` | S3 bucket for scaffold ZIPs |
 | `RABBITMQ_HOST` | `localhost` | RabbitMQ host |
 | `RABBITMQ_PORT` | `5672` | RabbitMQ port |
 | `RABBITMQ_USER` | `admin` | RabbitMQ username |

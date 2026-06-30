@@ -26,6 +26,11 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:admin}
     password: ${RABBITMQ_PASSWORD:password}
+  task:
+    execution:
+      pool:
+        core-size: 2
+        max-size: 4
 
 app:
   jwt:
@@ -34,6 +39,11 @@ app:
   queues:
     codegen-request: codegen-request-queue
     codegen-results: codegen-results-queue
+  aws:
+    s3:
+      challenges-bucket: ${AWS_S3_CHALLENGES_BUCKET:challenges-repo}
+    ecr:
+      repository-uri: ${ECR_REPOSITORY_URI:}
 
 management:
   endpoints:

@@ -30,7 +30,7 @@ You will receive:
 - The fix must address exactly what `<bug_description>` describes — do not introduce unrelated changes
 - The correct implementation must be complete — no TODOs, no stubs, no ellipsis
 - Use the same patterns visible in other fully-implemented methods (`@Transactional`, exception classes, repository calls, etc.)
-- Do NOT add new imports unless strictly required
+- Do NOT add new imports unless strictly required. If JPA imports are required, MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`).
 
 ---
 
@@ -42,6 +42,7 @@ Use `@BeforeEach` to reset and seed the database to a known state.
 **MUST FAIL** against `bug_code` (the broken version — the bug causes observable wrong behaviour).
 **MUST PASS** against `function_body` (the correct fix).
 Test ONLY the method for `<scenario_tag>`.
+**Imports** — For the test file, ALWAYS include all necessary imports, such as `java.util.UUID`, `java.util.List`, `java.util.Optional`, `java.time.LocalDate`, etc. If you use a class, you MUST import it.
 
 The tests must exercise the specific buggy behaviour described in `<bug_description>`. If the bug is "seat not reset after cancellation", tests must verify seat repository state after cancellation — not just that the endpoint returns 200.
 
@@ -82,13 +83,15 @@ The tests must exercise the specific buggy behaviour described in `<bug_descript
 {
   "function_body": "Booking booking = bookingRepository.findById(bookingId)\n    .orElseThrow(() -> new BookingNotFoundException(\"Booking not found\"));\nif (!booking.getUserId().equals(userId)) {\n    throw new ForbiddenException(\"Not your booking\");\n}\nSeat seat = booking.getSeat();\nseat.setIsBooked(false);\nseatRepository.save(seat);\nbookingRepository.delete(booking);\nuserService.addLoyaltyPoints(userId, 10);",
   "bug_code": "// DEBUG_SCENARIO: medium-seat-status-bug\nBooking booking = bookingRepository.findById(bookingId)\n    .orElseThrow(() -> new BookingNotFoundException(\"Booking not found\"));\nbookingRepository.delete(booking);\n// BUG: seat.setIsBooked(false) and seatRepository.save(seat) are missing — intentionally broken",
-  "test_hidden": "package com.challenge;\nimport org.junit.jupiter.api.Test;\nimport org.springframework.boot.test.context.SpringBootTest;\n..."
+  "test_hidden": "package com.challenge;\nimport org.junit.jupiter.api.Test;\nimport org.springframework.boot.test.context.SpringBootTest;\n...",
+  "test_visible": "package com.challenge.tests;\nimport org.junit.jupiter.api.Test;\nimport static org.junit.jupiter.api.Assertions.*;\n...\npublic class SeatStatusVisibleTest {\n    @Test void testCancelBookingUpdatesSeats() { ... }\n}"
 }
 ```
 
 - `function_body` — statements inside the fixed method, no signature, no annotations, no closing `}`
 - `bug_code` — statements inside the broken method verbatim (including the `// DEBUG_SCENARIO:` first line), no signature, no closing `}`
 - `test_hidden` — complete JUnit 5 test file
+- `test_visible` — 1–3 JUnit 5 tests visible to the user; must fail against `bug_code` and pass against `function_body`; class name `{ScenarioTitle}VisibleTest`, package `com.challenge.tests`
 
 ---
 
