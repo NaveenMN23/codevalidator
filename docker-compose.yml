@@ -206,19 +206,16 @@ services:
     image: platform/java-executor:latest
     command: echo "Java executor image built"
 
-  # Deferred Eager session-container manager for Run (see
-  # docs/design/deferred-eager-final-architecture.md) — owns long-lived, session-pinned
-  # containers behind a synchronous HTTP API. Submit/grading will move here too; the
-  # previous separate `platform-workers` RabbitMQ-based grading service has been removed.
   execution-service:
     build: ./platform-execution_service
     container_name: platform_execution_service
     ports:
       - "8001:8001"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-ap-southeast-2}
+      - AWS_S3_CHALLENGES_BUCKET=${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/sessions:/tmp/sessions
