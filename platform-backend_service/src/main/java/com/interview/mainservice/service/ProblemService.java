@@ -3,6 +3,7 @@ package com.interview.mainservice.service;
 import com.interview.mainservice.dto.PageResponse;
 import com.interview.mainservice.dto.ProblemDetailResponse;
 import com.interview.mainservice.dto.ProblemSummaryResponse;
+import com.interview.mainservice.infrastructure.ChallengeStorageService;
 import com.interview.mainservice.model.Problem;
 import com.interview.mainservice.repository.ProblemRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;

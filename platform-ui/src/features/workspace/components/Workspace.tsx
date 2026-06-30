@@ -12,7 +12,7 @@ import {
   RotateCcw, Sparkles, Sun, Moon, AlertTriangle
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
-import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge } from '../api';
+import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge, openWorkspaceSession } from '../api';
 import type { GradingResult } from '../workspace.types';
 import './Workspace.css';
 
@@ -132,6 +132,7 @@ export function Workspace() {
 
       setBootError(null);
       setIsBooting(true);
+
       try {
         // 1. Fetch Challenge Metadata (fast DB read, no S3) and check for a draft in parallel
         const [meta, draftData] = await Promise.all([
@@ -171,6 +172,13 @@ export function Workspace() {
         if (initialFiles['README.md']) setSelectedFile('README.md');
         else if (initialFiles['index.ts']) setSelectedFile('index.ts');
         else if (initialFiles['index.js']) setSelectedFile('index.js');
+
+        // Fire-and-forget, only once the problem has actually loaded successfully — starts
+        // the Fargate sandbox now so its ~30-60s cold start happens while the user reads the
+        // problem, not when they click Run. A failed load above must never trigger this.
+        openWorkspaceSession(challengeId).catch((err) =>
+          console.warn('Failed to open workspace session (will spawn lazily on Run instead):', err)
+        );
 
         terminalInstanceRef.current?.write('\r\n\x1b[32m✔ Environment is ready! Click "Run Tests" to execute.\x1b[0m\r\n');
       } catch (err) {

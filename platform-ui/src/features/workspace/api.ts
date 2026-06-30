@@ -37,6 +37,17 @@ export async function fetchChallenge(id: string): Promise<Challenge> {
   };
 }
 
+export async function openWorkspaceSession(challengeId: string): Promise<void> {
+  // Eagerly starts the Fargate sandbox for this problem so the cold start (~30-60s)
+  // happens while the user is reading the brief, not when they click Run. Fire-and-forget:
+  // the backend returns 202 immediately, callers should not await this for rendering.
+  const response = await fetch(`/api/v1/problems/${challengeId}/run/session`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) throw new Error('Failed to open workspace session');
+}
+
 export async function fetchChallengeFiles(id: string): Promise<Record<string, string>> {
   const response = await fetch(`/api/v1/problems/${id}/files`);
   if (!response.ok) throw new Error('Failed to fetch challenge files');

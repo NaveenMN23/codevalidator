@@ -64,6 +64,13 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_S3_CHALLENGES_BUCKET: ${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
+      AWS_S3_GOLD_MASTERS_BUCKET: ${AWS_S3_GOLD_MASTERS_BUCKET:-gold-masters}
+      ECS_CLUSTER_ARN: ${ECS_CLUSTER_ARN:-}
+      ECS_SUBNET_IDS: ${ECS_SUBNET_IDS:-}
+      ECS_SECURITY_GROUP_ID: ${ECS_SECURITY_GROUP_ID:-}
+      ECS_EXECUTION_ROLE_ARN: ${ECS_EXECUTION_ROLE_ARN:-}
+      ECS_ASSIGN_PUBLIC_IP: ${ECS_ASSIGN_PUBLIC_IP:-DISABLED}
+      REDIS_HOST: redis
       SECURITY_AUTH_ENABLED: "false"
     depends_on:
       postgres:
@@ -72,8 +79,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      execution-service:
-        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health 2>/dev/null | grep -q UP"]
       interval: 10s
@@ -92,6 +97,10 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_S3_CHALLENGES_BUCKET=${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
       - GOLD_MASTERS_BUCKET=${GOLD_MASTERS_BUCKET:-gold-masters}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=password
+      - REDIS_HOST=redis
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.2}
@@ -108,7 +117,6 @@ services:
       - POSTGRES_DSN=${POSTGRES_DSN:-postgresql://admin:password@postgres:5432/interview_db}
       - EXECUTION_SERVICE_URL=http://execution-service:8001
     volumes:
-      - ./challenges:/challenges
       - ./generated:/generated
     depends_on:
       - backend
