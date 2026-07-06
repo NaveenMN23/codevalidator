@@ -21,6 +21,10 @@ _JAVA_POM_TEMPLATE = (
     Path(__file__).parent.parent / "templates" / "java" / "pom.xml"
 ).read_text(encoding="utf-8")
 
+_JAVA_APP_TEMPLATE = (
+    Path(__file__).parent.parent / "templates" / "java" / "ChallengeApplication.java"
+).read_text(encoding="utf-8")
+
 _SUPPORTED_LANGUAGES = {"node", "java", "python"}
 _TIERS = ("easy", "medium", "hard")
 
@@ -318,7 +322,8 @@ class ScaffoldGenerator:
                 )
                 if language == "java":
                     skeleton.files["pom.xml"] = _JAVA_POM_TEMPLATE
-                    log.info("ScaffoldGenerator: injected pinned pom.xml template (java)")
+                    skeleton.files["src/main/java/com/challenge/ChallengeApplication.java"] = _JAVA_APP_TEMPLATE
+                    log.info("ScaffoldGenerator: injected pinned pom.xml + ChallengeApplication.java (java)")
                 tier_skeletons[tier] = skeleton
                 log.info(f"ScaffoldGenerator: Phase 2a done — lang={language}, tier={tier}, files={list(skeleton.files.keys())}")
 
