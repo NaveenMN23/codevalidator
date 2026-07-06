@@ -125,7 +125,9 @@ public class DockerImageService {
             runCommand(null, "docker", "push", ecrTag);
             log.info("Pushed {} to ECR", ecrTag);
 
+            final String finalEcrTag = ecrTag;
             problemRepository.findBySlug(slug).ifPresent(p -> {
+                p.setEcrImageUri(finalEcrTag);
                 p.setPublished(true);
                 problemRepository.save(p);
                 log.info("Published problem '{}' after successful image build", slug);
