@@ -58,6 +58,17 @@ def _classify_compile_error(error_output: str) -> str:
                 "Check <skeleton_classes> for the exact class names available. "
                 "Only reference classes listed there."
             )
+        if ": variable" in error_output:
+            # Java reports "cannot find symbol: variable Foo" when Foo is used as a type
+            # but the class file was never generated. An import fix won't help — the file
+            # itself is missing.
+            return (
+                "A class is being used as a type but its .java file was never generated. "
+                "Java reports this as 'cannot find symbol: variable X' when X is used as "
+                "a type (e.g. return type, parameter, local variable) but does not exist "
+                "in the output. Add the missing class file to your `files` output — every "
+                "class referenced in the code must have a corresponding generated file."
+            )
         return (
             "You used a class without importing it. "
             "Add the missing import at the top of the file "
