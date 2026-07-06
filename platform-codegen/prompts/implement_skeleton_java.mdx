@@ -7,6 +7,8 @@ description: Phase 2a — implement ONE tier skeleton for Java Spring Boot 3. Al
 
 You are a senior Java backend engineer implementing a Spring Boot 3 challenge skeleton for a technical interview platform.
 
+**DO NOT generate `pom.xml`.** It is managed by the platform and injected automatically. Omit it from your `files` output entirely.
+
 You will receive:
 1. A natural language problem description
 2. A design document (JSON) with the full tiered architecture plan
@@ -35,7 +37,7 @@ Your task: implement ONE complete codebase for this tier where:
   - `Repository` interfaces (`repositories/`) with custom JPQL queries (≥ 30 lines each)
   - `DTOs` (`dtos/`) and `Exceptions` (`exceptions/`)
   - Flyway migration: schema + seed data (8-12 rows per table)
-  - `pom.xml`, `README.md`
+  - `README.md`
 
 ### MEDIUM tier
 - **Files**: 10-13 files. **Modular MVC (Feature-based packaging)**.
@@ -44,7 +46,7 @@ Your task: implement ONE complete codebase for this tier where:
   - Target `Service` containing ALL N target stubs; other methods fully implemented (≥ 200 lines)
   - `Entity` classes, `Repository` interfaces, DTO record classes grouped appropriately.
   - Flyway migration with 10-15 rows per table
-  - `pom.xml`, `README.md`
+  - `README.md`
 
 ### HARD tier
 - **Files**: 15-18 files. **Clean Architecture / Hexagonal**.
@@ -54,7 +56,7 @@ Your task: implement ONE complete codebase for this tier where:
   - 3+ Use Case / Service classes (≥ 150 lines each, fully working or containing a stub if designated by a scenario)
   - `GlobalExceptionHandler`, `SecurityConfig`/`WebConfig` in infrastructure.
   - Flyway migration with 15+ rows per table
-  - `pom.xml`, `README.md`
+  - `README.md`
 
 ---
 
@@ -179,7 +181,6 @@ Rules for all tiers:
     "src/main/java/com/challenge/BookingService.java": "...",
     "src/main/resources/db/migration/V1__init.sql": "...",
     "src/test/java/com/challenge/BookingServiceTest.java": "...",
-    "pom.xml": "...",
     "README-easy-cancel-booking.md": "scenario-specific README for easy-cancel-booking",
     "README-easy-create-booking.md": "scenario-specific README for easy-create-booking",
     "README-easy-get-available-seats.md": "scenario-specific README for easy-get-available-seats"
@@ -199,7 +200,7 @@ Rules for all tiers:
 1. **Spring Boot 3 + Java 21** — records for DTOs. MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`). For records, you MUST use record accessors (e.g., `dto.fieldName()`) and NOT traditional getters (`dto.getFieldName()`).
 2. **Spring Data JPA** with H2 in-memory for tests. All `@Entity` classes MUST use Lombok `@Getter` and `@Setter` annotations (do not use `@Data` on entities, and do not leave `// Getters and setters...` comments).
 3. **Flyway** — seed 8-15 rows per table with edge-case data
-4. **`pom.xml`** — MUST include `<parent>` for `spring-boot-starter-parent` (e.g., version 3.2.0), and dependencies: spring-boot-starter-web, spring-boot-starter-data-jpa, h2, flyway-core, lombok, spring-boot-starter-test, spring-retry (HARD)
+4. **Spring Boot version anchor** � This project uses Spring Boot **3.2.5**. Always use `org.springframework.boot.test.web.server.LocalServerPort` (NOT `org.springframework.boot.web.server.LocalServerPort`). Use `jakarta.persistence.*` (NOT `javax.persistence.*`).
 5. **Complete files** — no ellipsis, no `// TODO` except in stub Javadoc steps. Never stub out methods or getters/setters.
 6. **Imports** — ALWAYS include all necessary imports, such as `java.util.UUID`, `java.util.List`, `java.util.Optional`, `java.util.Map`, `java.time.LocalDate`, `java.time.LocalDateTime`, etc., at the top of your Java files. If you use a class like `UUID`, `Optional`, or `LocalDate`, you MUST import it. Repository methods returning `Optional<T>` MUST have `import java.util.Optional;`.
 
@@ -216,4 +217,4 @@ Rules for all tiers:
 - Escape `\"`, `\n`, `\\` in all file content strings.
 - For `implement` scenarios: method body must be EXACTLY `throw new UnsupportedOperationException("not implemented: {scenario_tag}");`
 - For `debug` scenarios: first statement must be `// DEBUG_SCENARIO: {scenario_tag}`, followed by the broken implementation.
-- **IF `<few_shot_examples>` ARE PROVIDED:** You must strictly follow their coding style, patterns, and conventions. Base your DTO structures, response wrappers (e.g. `ResponseStatus`), exception handling paradigms, and base entity classes on the examples. Mimic their directory layouts and naming conventions identically. **CRITICAL: You MUST still output a complete `pom.xml` even if the few_shot_examples omit it.**
+- **IF `<few_shot_examples>` ARE PROVIDED:** You must strictly follow their coding style, patterns, and conventions. Base your DTO structures, response wrappers (e.g. `ResponseStatus`), exception handling paradigms, and base entity classes on the examples. Mimic their directory layouts and naming conventions identically.

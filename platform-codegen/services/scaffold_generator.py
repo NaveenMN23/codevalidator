@@ -1,5 +1,6 @@
 import json
 import re
+from pathlib import Path
 from infrastructure.cache import cache_client
 from infrastructure.logger import log
 from infrastructure.storage import storage_client
@@ -15,6 +16,10 @@ from services.validators import (
 from generator.engine import generator
 from services.few_shot_loader import load_few_shot_repos
 from services.compile_validator import compile_validator, CompileValidationError
+
+_JAVA_POM_TEMPLATE = (
+    Path(__file__).parent.parent / "templates" / "java" / "pom.xml"
+).read_text(encoding="utf-8")
 
 _SUPPORTED_LANGUAGES = {"node", "java", "python"}
 _TIERS = ("easy", "medium", "hard")
@@ -311,6 +316,9 @@ class ScaffoldGenerator:
                     user_context,
                     label=f"skeleton-{language}-{tier}-validate",
                 )
+                if language == "java":
+                    skeleton.files["pom.xml"] = _JAVA_POM_TEMPLATE
+                    log.info("ScaffoldGenerator: injected pinned pom.xml template (java)")
                 tier_skeletons[tier] = skeleton
                 log.info(f"ScaffoldGenerator: Phase 2a done — lang={language}, tier={tier}, files={list(skeleton.files.keys())}")
 
@@ -353,6 +361,8 @@ class ScaffoldGenerator:
                             skeleton_compile_context,
                             label=f"skeleton-{language}-{tier}-compile-retry-validate",
                         )
+                        if language == "java":
+                            skeleton.files["pom.xml"] = _JAVA_POM_TEMPLATE
                         tier_skeletons[tier] = skeleton
                         log.info(f"ScaffoldGenerator: skeleton regenerated — lang={language}, tier={tier}, files={list(skeleton.files.keys())}")
 
