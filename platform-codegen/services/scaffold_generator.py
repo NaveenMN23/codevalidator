@@ -37,8 +37,15 @@ def _test_file_path(java_source: str) -> str | None:
     return f"src/test/java/{pkg.group(1).replace('.', '/')}/{cls.group(1)}.java"
 
 
-def _classify_compile_error(error_output: str) -> str:
+def _classify_compile_error(error_output: str, delta_phase: bool = False) -> str:
     if "does not exist" in error_output and "com.challenge" in error_output:
+        if delta_phase:
+            return (
+                "You referenced a class that does not exist in the skeleton. "
+                "In this phase you cannot add new files — you can only return `function_body`. "
+                "Rewrite the function body to only use classes listed in <skeleton_classes>. "
+                "Do not use any class not already present in the skeleton."
+            )
         return (
             "You generated code that imports from a package (e.g. com.challenge.dtos) "
             "but never generated the corresponding Java files for that package. "
@@ -60,8 +67,14 @@ def _classify_compile_error(error_output: str) -> str:
             )
         if ": variable" in error_output:
             # Java reports "cannot find symbol: variable Foo" when Foo is used as a type
-            # but the class file was never generated. An import fix won't help — the file
-            # itself is missing.
+            # but the class file was never generated.
+            if delta_phase:
+                return (
+                    "You used a class as a type that does not exist in the skeleton. "
+                    "In this phase you cannot add new files — you can only return `function_body`. "
+                    "Rewrite the function body to only use classes listed in <skeleton_classes>. "
+                    "Do not reference any class not already present there."
+                )
             return (
                 "A class is being used as a type but its .java file was never generated. "
                 "Java reports this as 'cannot find symbol: variable X' when X is used as "
@@ -450,7 +463,7 @@ class ScaffoldGenerator:
                                 log.error(f"ScaffoldGenerator: Delta compilation failed after {max_attempts} attempts for scenario={tag}")
                                 raise e
                             log.warning(f"Delta compilation failed (attempt {attempt}): {e}. Sending compiler error to LLM for correction.")
-                            targeted_hint = _classify_compile_error(str(e))
+                            targeted_hint = _classify_compile_error(str(e), delta_phase=True)
                             delta_user_context = (
                                 f"{user_context}\n\n"
                                 f"Your previous implementation caused a compilation error:\n{e}\n\n"
