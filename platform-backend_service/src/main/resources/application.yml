@@ -1,6 +1,9 @@
 spring:
   application:
     name: platform-backend-service
+  mvc:
+    async:
+      request-timeout: 120000
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/interview_db}
     username: ${DB_USERNAME:admin}

@@ -1,5 +1,5 @@
 -- Drop untracked column added outside Flyway (no migration ever created it; holds no real data)
-ALTER TABLE problems DROP COLUMN tiers;
+ALTER TABLE problems DROP COLUMN IF EXISTS tiers;
 
 -- Mandatory JSONB metadata column, empty object for now until S3 metadata is wired up
 ALTER TABLE problems ADD COLUMN metadata JSONB NOT NULL DEFAULT '{}'::jsonb;

@@ -1,5 +1,6 @@
 import json
 import re
+from pathlib import Path
 from infrastructure.cache import cache_client
 from infrastructure.logger import log
 from infrastructure.storage import storage_client
@@ -16,6 +17,14 @@ from generator.engine import generator
 from services.few_shot_loader import load_few_shot_repos
 from services.compile_validator import compile_validator, CompileValidationError
 
+_JAVA_POM_TEMPLATE = (
+    Path(__file__).parent.parent / "templates" / "java" / "pom.xml"
+).read_text(encoding="utf-8")
+
+_JAVA_APP_TEMPLATE = (
+    Path(__file__).parent.parent / "templates" / "java" / "ChallengeApplication.java"
+).read_text(encoding="utf-8")
+
 _SUPPORTED_LANGUAGES = {"node", "java", "python"}
 _TIERS = ("easy", "medium", "hard")
 
@@ -28,8 +37,15 @@ def _test_file_path(java_source: str) -> str | None:
     return f"src/test/java/{pkg.group(1).replace('.', '/')}/{cls.group(1)}.java"
 
 
-def _classify_compile_error(error_output: str) -> str:
+def _classify_compile_error(error_output: str, delta_phase: bool = False) -> str:
     if "does not exist" in error_output and "com.challenge" in error_output:
+        if delta_phase:
+            return (
+                "You referenced a class that does not exist in the skeleton. "
+                "In this phase you cannot add new files — you can only return `function_body`. "
+                "Rewrite the function body to only use classes listed in <skeleton_classes>. "
+                "Do not use any class not already present in the skeleton."
+            )
         return (
             "You generated code that imports from a package (e.g. com.challenge.dtos) "
             "but never generated the corresponding Java files for that package. "
@@ -48,6 +64,23 @@ def _classify_compile_error(error_output: str) -> str:
                 "You referenced a project class that does not exist in the skeleton. "
                 "Check <skeleton_classes> for the exact class names available. "
                 "Only reference classes listed there."
+            )
+        if ": variable" in error_output:
+            # Java reports "cannot find symbol: variable Foo" when Foo is used as a type
+            # but the class file was never generated.
+            if delta_phase:
+                return (
+                    "You used a class as a type that does not exist in the skeleton. "
+                    "In this phase you cannot add new files — you can only return `function_body`. "
+                    "Rewrite the function body to only use classes listed in <skeleton_classes>. "
+                    "Do not reference any class not already present there."
+                )
+            return (
+                "A class is being used as a type but its .java file was never generated. "
+                "Java reports this as 'cannot find symbol: variable X' when X is used as "
+                "a type (e.g. return type, parameter, local variable) but does not exist "
+                "in the output. Add the missing class file to your `files` output — every "
+                "class referenced in the code must have a corresponding generated file."
             )
         return (
             "You used a class without importing it. "
@@ -311,6 +344,10 @@ class ScaffoldGenerator:
                     user_context,
                     label=f"skeleton-{language}-{tier}-validate",
                 )
+                if language == "java":
+                    skeleton.files["pom.xml"] = _JAVA_POM_TEMPLATE
+                    skeleton.files["src/main/java/com/challenge/ChallengeApplication.java"] = _JAVA_APP_TEMPLATE
+                    log.info("ScaffoldGenerator: injected pinned pom.xml + ChallengeApplication.java (java)")
                 tier_skeletons[tier] = skeleton
                 log.info(f"ScaffoldGenerator: Phase 2a done — lang={language}, tier={tier}, files={list(skeleton.files.keys())}")
 
@@ -353,6 +390,8 @@ class ScaffoldGenerator:
                             skeleton_compile_context,
                             label=f"skeleton-{language}-{tier}-compile-retry-validate",
                         )
+                        if language == "java":
+                            skeleton.files["pom.xml"] = _JAVA_POM_TEMPLATE
                         tier_skeletons[tier] = skeleton
                         log.info(f"ScaffoldGenerator: skeleton regenerated — lang={language}, tier={tier}, files={list(skeleton.files.keys())}")
 
@@ -424,7 +463,7 @@ class ScaffoldGenerator:
                                 log.error(f"ScaffoldGenerator: Delta compilation failed after {max_attempts} attempts for scenario={tag}")
                                 raise e
                             log.warning(f"Delta compilation failed (attempt {attempt}): {e}. Sending compiler error to LLM for correction.")
-                            targeted_hint = _classify_compile_error(str(e))
+                            targeted_hint = _classify_compile_error(str(e), delta_phase=True)
                             delta_user_context = (
                                 f"{user_context}\n\n"
                                 f"Your previous implementation caused a compilation error:\n{e}\n\n"
