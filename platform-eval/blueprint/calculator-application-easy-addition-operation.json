@@ -1,23 +1,33 @@
 {
   "problemId": "calculator-application-easy-addition-operation",
   "task": {
+    "taskType": "BUG_FIX",
     "title": "Implement Addition Operation",
     "description": "The `add` method in `CalculatorService` has a broken implementation — the function body is not properly indented, causing a SyntaxError. The student must fix the indentation, ensure `Calculation` is imported, use `CalculationRepository` to persist the result, and return the sum.",
+    "constraints": [
+      "Fix indentation so the method body is inside the `add` method, not at module scope",
+      "Import `Calculation` from `src.models.Calculation` if not already imported",
+      "Persist the result via `CalculationRepository.save()` before returning",
+      "Raise `InvalidOperationException` (or `ValueError`) for non-numeric inputs resulting in HTTP 400",
+      "Return the correct sum as a numeric value"
+    ],
     "difficulty": "EASY",
     "targetRole": "JUNIOR_TO_MID",
     "language": "Python",
     "framework": "FastAPI",
+    "expectedComplexity": { "time": "O(1)", "space": "O(1)" },
     "concurrencyRequired": false
   },
   "repo": {
+    "targetFile": "src/services/CalculatorService.py",
     "entrypoint": "src/index.py",
     "relevantFiles": [
-      { "path": "src/services/CalculatorService.py", "role": "FILE_TO_FIX" },
-      { "path": "src/controllers/CalculatorController.py", "role": "REFERENCE" },
+      { "path": "src/services/CalculatorService.py", "role": "TARGET" },
+      { "path": "src/controllers/CalculatorController.py", "role": "CALLER" },
       { "path": "src/repositories/CalculationRepository.py", "role": "DEPENDENCY" },
-      { "path": "src/models/Calculation.py", "role": "DEPENDENCY" },
-      { "path": "src/exceptions/InvalidOperationException.py", "role": "REFERENCE" },
-      { "path": "src/dtos/CalculationDTO.py", "role": "REFERENCE" }
+      { "path": "src/models/Calculation.py", "role": "MODEL" },
+      { "path": "src/exceptions/InvalidOperationException.py", "role": "EXCEPTION" },
+      { "path": "src/dtos/CalculationDTO.py", "role": "SCHEMA" }
     ]
   },
   "bugMeta": {
@@ -28,43 +38,83 @@
     "type": "SYNTAX_BUG"
   },
   "evaluation": {
-    "rubric": "Assess whether the student correctly identifies the indentation issue, fixes the method body, imports the Calculation model, uses CalculationRepository, and handles invalid inputs. Award higher marks for using InvalidOperationException over raw ValueError and for noticing the unused imports pattern.",
+    "rubric": {
+      "correctness": {
+        "9-10": "Indentation fixed; Calculation imported; CalculationRepository.save() called; correct sum returned; invalid inputs handled with appropriate exception",
+        "7-8": "Fix present and sum correct; one minor gap (e.g. missing save() or bare ValueError instead of InvalidOperationException)",
+        "4-6": "Basic sum works but missing 1-2 constraints (e.g. no save, missing import handled accidentally)",
+        "1-3": "Incomplete or still broken — indentation not fully fixed or wrong return"
+      },
+      "efficiency": {
+        "9-10": "O(1) single operation; candidate recognises the fix requires no algorithmic change",
+        "7-8": "Correct but no complexity discussion",
+        "4-6": "Works but introduced unnecessary re-computation or extra DB calls",
+        "1-3": "Introduced an obvious inefficiency"
+      }
+    },
+    "senioritySignals": [
+      "Uses `InvalidOperationException` over raw `ValueError` — shows they read existing code before writing",
+      "Notes that `bool` is a subclass of `int` in Python and guards against it",
+      "Recognises that the broken import is what caused the entire service to crash on startup",
+      "Spots unused imports pattern in the file and comments on it"
+    ],
+    "commonMistakes": [
+      "Forgetting to import Calculation from src.models.Calculation",
+      "Using bare `if` chain instead of `elif/else` for validation branches",
+      "Raising ValueError instead of InvalidOperationException",
+      "Not calling CalculationRepository.save() — leaving persistence broken",
+      "Getting the Calculation constructor argument order wrong"
+    ],
     "passCriteria": [
       "POST /add returns the correct sum for two valid numbers",
       "The result is persisted via CalculationRepository",
       "Invalid (non-numeric) inputs raise an appropriate error resulting in HTTP 400"
-    ],
-    "commonMistakes": [
-      "Forgetting to import Calculation from src.models.Calculation",
-      "Using a bare `if` chain instead of `elif/else` for validation branches",
-      "Raising ValueError instead of InvalidOperationException (a custom exception already exists in the project)",
-      "Not calling CalculationRepository.save() — leaving persistence broken",
-      "Hardcoding operation='add' correctly but getting the Calculation constructor argument order wrong"
     ]
   },
   "followUpContext": {
     "interviewerFocusAreas": [
       {
-        "area": "Python indentation and syntax awareness",
-        "scope": "Can the student quickly recognise that the entire method body is at module scope and fix it? Do they understand why Python raises IndentationError vs SyntaxError?"
+        "area": "SYNTAX_UNDERSTANDING",
+        "priority": 1,
+        "preferredFormat": "TEXT",
+        "scope": "Can the student explain why an indentation error in Python causes an import failure — not just a runtime error but a startup crash?",
+        "probeQuestion": "Why does Python raise an IndentationError here at import time rather than when the method is first called?",
+        "goodAnswerIndicator": "Explains that Python parses and compiles the entire module on import, so any syntax error makes the module unimportable"
       },
       {
-        "area": "Codebase exploration — custom exceptions",
-        "scope": "Does the student notice `InvalidOperationException` already exists? A senior candidate uses it; a junior reinvents ValueError or ignores the existing exception."
+        "area": "CODEBASE_EXPLORATION",
+        "priority": 1,
+        "preferredFormat": "MCQ",
+        "scope": "Does the student notice `InvalidOperationException` already exists? A senior candidate uses it; a junior reinvents ValueError or ignores the existing exception.",
+        "probeQuestion": "Given that the project already has an InvalidOperationException class, when would you prefer to raise that over Python's built-in ValueError?",
+        "goodAnswerIndicator": "Understands domain exceptions carry semantic meaning and are caught more precisely by controllers; raw ValueError is a catch-all"
       },
       {
-        "area": "Repository pattern adherence",
-        "scope": "Does the student use `CalculationRepository.save()` or skip persistence entirely? Skipping persistence passes GET tests but breaks audit/history requirements."
+        "area": "REPOSITORY_PATTERN",
+        "priority": 2,
+        "preferredFormat": "TEXT",
+        "scope": "Does the student use `CalculationRepository.save()` or skip persistence entirely? Skipping persistence passes GET tests but breaks audit/history requirements.",
+        "probeQuestion": "What happens to the audit trail if you compute the result but don't call CalculationRepository.save()? How would that show up in production?",
+        "goodAnswerIndicator": "Notes that history/audit endpoints would return stale or empty data; mentions the silent failure is hard to detect from the API surface"
       },
       {
-        "area": "Type-safe guard robustness",
-        "scope": "The isinstance check guards against non-numeric input. Would the student handle bool subclass edge cases (bool is a subclass of int in Python)? Senior candidates note this."
+        "area": "PYTHON_TYPE_SYSTEM",
+        "priority": 2,
+        "preferredFormat": "TRUE_FALSE",
+        "scope": "Does the student handle bool subclass edge cases? bool is a subclass of int in Python — isinstance(True, int) is True.",
+        "probeQuestion": "True and False are: A) completely separate from int in Python  B) subclasses of int  C) converted to int only on arithmetic",
+        "goodAnswerIndicator": "Selects B and can explain isinstance(True, int) == True and that 1 + True == 2"
       }
     ],
     "expectedApproaches": [
-      "Fix indentation, add `from src.models.Calculation import Calculation`, call save, return result",
-      "Replace ValueError with InvalidOperationException to match project conventions",
-      "Leave ValueError (acceptable at junior level since the README asks for it explicitly)"
+      {
+        "approach": "Fix indentation, add import, call save, return result",
+        "tradeoff": "Minimal — the correct fix is mechanical; the skill tested is codebase reading, not algorithm design"
+      },
+      {
+        "approach": "Replace ValueError with InvalidOperationException to match project conventions",
+        "tradeoff": "Better semantic alignment; requires reading the existing exception class"
+      }
     ],
     "knownEdgeCases": [
       "bool inputs: `True + False == 1` — isinstance(True, int) is True in Python",
@@ -72,9 +122,27 @@
       "Passing None — should raise the invalid-input error, not an AttributeError"
     ],
     "scaleUpDimensions": [
-      "Add concurrent request handling to CalculationRepository",
-      "Replace in-memory repository with a real DB-backed one (SQLAlchemy)",
-      "Implement all four operations with a single dispatch table instead of if/elif chains"
+      { "dimension": "Add concurrent request handling to CalculationRepository", "triggerCondition": "candidate used save() correctly and mentioned thread safety" },
+      { "dimension": "Replace in-memory repository with a real DB-backed one (SQLAlchemy)", "triggerCondition": "candidate asked about persistence durability" },
+      { "dimension": "Implement all four operations with a single dispatch table instead of if/elif chains", "triggerCondition": "candidate's validation used bare-if branching" }
+    ],
+    "implementationChallenges": [
+      {
+        "id": "dispatch-table",
+        "trigger": "candidate used if/elif chain for the four arithmetic operations",
+        "instruction": "Refactor the operation dispatch to use a dictionary mapping operation names to callables instead of an if/elif chain. The result should be the same but the code should support adding a new operation by adding one dict entry.",
+        "targetFile": "src/services/CalculatorService.py",
+        "acceptanceCriteria": "A new 'modulo' operation can be added by inserting one line in the dispatch dict without touching any if/elif chain",
+        "difficulty": "EASY"
+      },
+      {
+        "id": "db-backed-repository",
+        "trigger": "candidate correctly used CalculationRepository.save() and asked about persistence",
+        "instruction": "Replace the in-memory `CalculationRepository` with a SQLAlchemy-backed implementation. The `add` method signature should not change.",
+        "targetFile": "src/repositories/CalculationRepository.py",
+        "acceptanceCriteria": "Results survive a service restart; no changes required in CalculatorService.py",
+        "difficulty": "MEDIUM"
+      }
     ],
     "followUpIntent": "Probe whether the student reads existing project code before writing their own, and whether they understand Python's indentation model deeply enough to explain why the bug manifests as it does."
   }

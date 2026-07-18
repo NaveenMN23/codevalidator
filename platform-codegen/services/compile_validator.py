@@ -58,15 +58,29 @@ class CompileValidator:
                 raise CompileValidationError(error_msg)
 
     def _validate_java(self, cwd: Path):
-        # We assume maven is available in the environment.
-        # test-compile compiles both main and test sources.
-        subprocess.run(
+        result = subprocess.run(
             ["mvn", "-B", "-q", "test-compile"],
             cwd=cwd,
-            check=True,
             capture_output=True,
             text=True
         )
+        if result.returncode == 0:
+            return
+        combined = (result.stdout or "") + (result.stderr or "")
+        # Dependency resolution failures are network/infra issues, not code errors.
+        # Raising CompileValidationError here would cause the LLM to "fix" unfixable problems.
+        if "Could not transfer artifact" in combined or "Name or service not known" in combined \
+                or "Temporary failure in name resolution" in combined \
+                or "Could not resolve dependencies" in combined:
+            log.warning(
+                "Java compile validation skipped — Maven could not reach remote repositories. "
+                "This is a network/infra issue, not a code error."
+            )
+            return
+        err = subprocess.CalledProcessError(result.returncode, ["mvn", "-B", "-q", "test-compile"])
+        err.stdout = result.stdout
+        err.stderr = result.stderr
+        raise err
 
     def _validate_node(self, cwd: Path):
         if not (cwd / "package.json").exists():

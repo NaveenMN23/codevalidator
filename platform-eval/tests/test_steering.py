@@ -1,6 +1,6 @@
 import pytest
 from models.dtos import CandidateDepth, FollowUpIntent, FollowUpFormat
-from services.steering import select_intent_and_formats, MAX_TURNS
+from services.steering import select_intent_and_formats, compute_max_turns, MAX_TURNS
 
 
 MIN_TIME = 600
@@ -80,6 +80,46 @@ def test_max_turns_forces_close():
         time_remaining=3000, min_time=600,
         correctness_passed=True, candidate_depth=CandidateDepth.ADEQUATE,
         difficulty="MEDIUM", turn_count=MAX_TURNS,
+    )
+    assert intent == FollowUpIntent.CLOSE
+
+
+def test_compute_max_turns_easy_caps_at_2():
+    assert compute_max_turns(3000, 600, "EASY") == 2
+
+
+def test_compute_max_turns_hard_gets_4():
+    assert compute_max_turns(3000, 600, "HARD") == 4
+
+
+def test_compute_max_turns_shrinks_with_low_time():
+    # ratio ≈ 1.3x → should be max(base-2, 1)
+    assert compute_max_turns(800, 600, "MEDIUM") == 1
+
+
+def test_compute_max_turns_medium_with_moderate_time():
+    # ratio = 2.5x → max(3-1, 1) = 2
+    assert compute_max_turns(1500, 600, "MEDIUM") == 2
+
+
+def test_hard_difficulty_biases_escalate():
+    # HARD should prefer ESCALATE even when correctness is ambiguous
+    intent, formats = select_intent_and_formats(
+        time_remaining=2000, min_time=600,
+        correctness_passed=False, candidate_depth=None,
+        difficulty="HARD", turn_count=0,
+    )
+    # hard_bias makes much_time + HARD → ESCALATE regardless of correctness
+    assert intent == FollowUpIntent.ESCALATE
+
+
+def test_custom_max_turns_overrides_global():
+    # With max_turns=1, a turn_count=1 should close
+    intent, formats = select_intent_and_formats(
+        time_remaining=3000, min_time=600,
+        correctness_passed=True, candidate_depth=None,
+        difficulty="MEDIUM", turn_count=1,
+        max_turns=1,
     )
     assert intent == FollowUpIntent.CLOSE
 

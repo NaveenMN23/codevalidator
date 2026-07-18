@@ -7,9 +7,16 @@ import json
 from models.dtos import FollowUpFormat, FollowUpIntent
 
 _PERSONA = """You are a senior software engineer conducting a technical interview.
-Your role is to evaluate the candidate's code submission and conduct a focused follow-up interview.
+Your role is to evaluate the candidate's code or answer and then engage them in a focused follow-up conversation.
 You reason about code quality; you never execute code.
 Be precise, fair, and grounded in the blueprint criteria.
+
+Interaction style:
+- Always acknowledge the candidate's submission or answer in 1-3 sentences before asking the follow-up.
+  Reference something specific they did (correctly or incorrectly). This makes the interview feel natural.
+- Then ask exactly one follow-up question.
+- Keep your tone professional but encouraging.
+
 Respond ONLY with valid JSON matching the schema described in the user message."""
 
 
@@ -31,11 +38,40 @@ def _format_focus_areas(areas: list[dict]) -> str:
         scope = a.get("scope", "")
         probe = a.get("probeQuestion", "")
         indicator = a.get("goodAnswerIndicator", "")
-        line = f"- {area}: {scope}"
+        preferred_fmt = a.get("preferredFormat", "")
+        priority = a.get("priority", 2)
+        line = f"- [{priority}] {area}: {scope}"
+        if preferred_fmt:
+            line += f"\n  Preferred format: {preferred_fmt}"
         if probe:
-            line += f"\n  Probe question: {probe}"
+            line += f"\n  Suggested probe: {probe}"
         if indicator:
             line += f"\n  Strong answer looks like: {indicator}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _format_remaining_areas(all_areas: list[dict], probed_areas: list[str]) -> str:
+    """Returns focus areas not yet probed, sorted by priority ascending (1 = highest)."""
+    remaining = [a for a in all_areas if a.get("area", "") not in probed_areas]
+    remaining_sorted = sorted(remaining, key=lambda a: a.get("priority", 2))
+    if not remaining_sorted:
+        return "(all focus areas have been covered)"
+    lines = []
+    for a in remaining_sorted:
+        area = a.get("area", "")
+        scope = a.get("scope", "")
+        probe = a.get("probeQuestion", "")
+        indicator = a.get("goodAnswerIndicator", "")
+        preferred_fmt = a.get("preferredFormat", "")
+        priority = a.get("priority", 2)
+        line = f"- [{priority}] {area}: {scope}"
+        if preferred_fmt:
+            line += f"\n  Preferred format: {preferred_fmt}"
+        if probe:
+            line += f"\n  Suggested probe: {probe}"
+        if indicator:
+            line += f"\n  Strong answer: {indicator}"
         lines.append(line)
     return "\n".join(lines)
 
@@ -94,12 +130,28 @@ def _format_scale_up(dimensions: list) -> str:
     return "\n".join(lines)
 
 
+def _format_implementation_challenges(challenges: list[dict]) -> str:
+    if not challenges:
+        return "(none specified)"
+    lines = []
+    for c in challenges:
+        cid = c.get("id", "")
+        trigger = c.get("trigger", "")
+        instruction = c.get("instruction", "")
+        criteria = c.get("acceptanceCriteria", "")
+        line = f"- [{cid}] Trigger: {trigger}\n  Instruction: {instruction}"
+        if criteria:
+            line += f"\n  Acceptance: {criteria}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _intent_instruction(intent: FollowUpIntent, legal_formats: list[FollowUpFormat], difficulty: str) -> str:
     format_names = ", ".join(f.value for f in legal_formats) if legal_formats else "TEXT"
     intent_map = {
         FollowUpIntent.ESCALATE: (
             f"ESCALATE: the candidate solved the problem well. "
-            f"Push them toward a harder concept from scaleUpDimensions. "
+            f"Push them toward a harder concept from scaleUpDimensions or implementationChallenges. "
             f"Difficulty tier is {difficulty}."
         ),
         FollowUpIntent.CONSOLIDATE: (
@@ -124,6 +176,7 @@ def _intent_instruction(intent: FollowUpIntent, legal_formats: list[FollowUpForm
 
 def _format_schema_code_eval() -> str:
     return json.dumps({
+        "acknowledgment": "<1-3 sentences acknowledging the candidate's code — what they did well, any notable gap, natural transition to follow-up. Required even when closing.>",
         "correctness": {
             "rating": "<int 1-10>",
             "passed": "<bool>",
@@ -138,9 +191,10 @@ def _format_schema_code_eval() -> str:
             "intent": "<ESCALATE|CONSOLIDATE|QUICK_PROBE|QUICK_CLOSE|CLOSE>",
             "type": "<CONVERSATIONAL|IMPLEMENTATION>",
             "format": "<TEXT|CODE|MCQ|TRUE_FALSE|COMPLEXITY>",
-            "question": "<string>",
-            "options": "<list[string] or null>",
-            "expected_answer_key": "<string or null>"
+            "question": "<string — the follow-up question to ask the candidate>",
+            "chosen_area": "<area name from remaining focus areas, or null if CLOSE>",
+            "options": "<list[string] or null — only for MCQ/TRUE_FALSE>",
+            "expected_answer_key": "<string or null — correct letter/value, never shown to candidate>"
         },
         "communication_finding": "<string or null>"
     }, indent=2)
@@ -148,16 +202,18 @@ def _format_schema_code_eval() -> str:
 
 def _format_schema_conversational_eval() -> str:
     return json.dumps({
-        "finding": "<string>",
+        "acknowledgment": "<1-3 sentences acknowledging the candidate's answer — what was right, what was missing, natural transition. Required even when closing.>",
+        "finding": "<string — evaluation of the candidate's answer>",
         "candidate_depth": "<SHALLOW|ADEQUATE|STRONG>",
         "answer_rating": "<int 1-10>",
         "follow_up": {
             "intent": "<ESCALATE|CONSOLIDATE|QUICK_PROBE|QUICK_CLOSE|CLOSE>",
             "type": "<CONVERSATIONAL|IMPLEMENTATION>",
             "format": "<TEXT|CODE|MCQ|TRUE_FALSE|COMPLEXITY>",
-            "question": "<string>",
-            "options": "<list[string] or null>",
-            "expected_answer_key": "<string or null>"
+            "question": "<string — the next question to ask the candidate>",
+            "chosen_area": "<area name from remaining focus areas, or null if CLOSE>",
+            "options": "<list[string] or null — only for MCQ/TRUE_FALSE>",
+            "expected_answer_key": "<string or null — correct letter/value, never shown to candidate>"
         },
         "communication_finding": "<string or null>"
     }, indent=2)
@@ -172,19 +228,22 @@ def build_code_submission_messages(
     history: list[dict],
     time_remaining: int,
     difficulty: str = "MEDIUM",
+    probed_areas: list[str] | None = None,
 ) -> tuple[str, str]:
     """Returns (system_prompt, user_message) for a CODE_SUBMISSION turn."""
+    probed_areas = probed_areas or []
     task = blueprint.get("task", {})
     evaluation = blueprint.get("evaluation", {})
     follow_up_ctx = blueprint.get("followUpContext", {})
     rubric = evaluation.get("rubric", "Evaluate correctness and efficiency.")
-    focus_areas = follow_up_ctx.get("interviewerFocusAreas", [])
+    all_focus_areas = follow_up_ctx.get("interviewerFocusAreas", [])
     scale_up = follow_up_ctx.get("scaleUpDimensions", [])
     expected_complexity = task.get("expectedComplexity", {})
     common_mistakes = evaluation.get("commonMistakes", [])
     seniority_signals = evaluation.get("senioritySignals", [])
     expected_approaches = follow_up_ctx.get("expectedApproaches", [])
     known_edge_cases = follow_up_ctx.get("knownEdgeCases", [])
+    implementation_challenges = follow_up_ctx.get("implementationChallenges", [])
 
     # System prompt: stable prefix (persona + blueprint + gold-master)
     system_prompt = f"""{_PERSONA}
@@ -197,13 +256,13 @@ Expected complexity: {json.dumps(expected_complexity)}
 Difficulty: {difficulty}
 
 === RUBRIC ===
-{rubric}
+{rubric if isinstance(rubric, str) else json.dumps(rubric, indent=2)}
 
 === SENIORITY SIGNALS ===
 {json.dumps(seniority_signals)}
 
-=== INTERVIEWER FOCUS AREAS ===
-{_format_focus_areas(focus_areas)}
+=== ALL INTERVIEWER FOCUS AREAS ===
+{_format_focus_areas(all_focus_areas)}
 
 === EXPECTED APPROACHES ===
 {_format_approaches(expected_approaches)}
@@ -214,6 +273,9 @@ Difficulty: {difficulty}
 === SCALE-UP DIMENSIONS ===
 {_format_scale_up(scale_up)}
 
+=== IMPLEMENTATION CHALLENGES (for CODE-type follow-ups) ===
+{_format_implementation_challenges(implementation_challenges)}
+
 === COMMON MISTAKES TO PROBE ===
 {json.dumps(common_mistakes)}
 
@@ -221,7 +283,13 @@ Difficulty: {difficulty}
 {_format_files(gold_master_files)}
 """
 
-    # User message: dynamic (candidate files + intent + schema)
+    # Probed areas context for the LLM
+    probed_text = ""
+    if probed_areas:
+        probed_text = f"\n=== ALREADY PROBED AREAS (do NOT repeat) ===\n{', '.join(probed_areas)}\n"
+
+    remaining_text = f"\n=== REMAINING FOCUS AREAS (pick from these, highest priority first) ===\n{_format_remaining_areas(all_focus_areas, probed_areas)}\n"
+
     history_text = ""
     if history:
         history_text = "\n=== CONVERSATION HISTORY ===\n" + "\n".join(
@@ -233,17 +301,20 @@ Difficulty: {difficulty}
 
 === TIME REMAINING ===
 {time_remaining} seconds
-
-{history_text}
+{probed_text}{remaining_text}{history_text}
 
 === YOUR TASK ===
-1. Rate correctness and efficiency 1–10 against the rubric.
-2. {_intent_instruction(intent, legal_formats, difficulty)}
+1. Write acknowledgment (1-3 sentences): reference something specific in the candidate's code.
+   If they did well, say so. If they missed something, name it concisely. End with a natural
+   transition into the follow-up (e.g. "Let's dig into...").
+2. Rate correctness and efficiency 1–10 against the rubric.
+3. {_intent_instruction(intent, legal_formats, difficulty)}
+   - Pick chosen_area from REMAINING FOCUS AREAS (highest priority first).
    - For MCQ/TRUE_FALSE: populate options[] as lettered strings (e.g. "A) ...")
-     and set expected_answer_key to the correct letter. Do NOT send expected_answer_key to the candidate.
+     and set expected_answer_key to the correct letter. Do NOT reveal expected_answer_key in the question.
    - For COMPLEXITY: ask for time/space complexity or scalability estimate.
-   - For CODE (IMPLEMENTATION): ask the candidate to re-submit with a specific change.
-3. Set follow_up to null if intent is CLOSE.
+   - For CODE (IMPLEMENTATION): reference an implementationChallenge that fits what you observed.
+4. Set follow_up to null if intent is CLOSE. Still write acknowledgment.
 
 Respond ONLY with JSON matching this schema:
 {_format_schema_code_eval()}"""
@@ -260,10 +331,12 @@ def build_answer_messages(
     history: list[dict],
     time_remaining: int,
     difficulty: str = "MEDIUM",
+    probed_areas: list[str] | None = None,
 ) -> tuple[str, str]:
     """Returns (system_prompt, user_message) for a CONVERSATIONAL_ANSWER turn."""
+    probed_areas = probed_areas or []
     task = blueprint.get("task", {})
-    focus_areas = blueprint.get("followUpContext", {}).get("interviewerFocusAreas", [])
+    all_focus_areas = blueprint.get("followUpContext", {}).get("interviewerFocusAreas", [])
 
     system_prompt = f"""{_PERSONA}
 
@@ -271,21 +344,28 @@ def build_answer_messages(
 Description: {task.get('description', 'N/A')}
 Difficulty: {difficulty}
 
-=== INTERVIEWER FOCUS AREAS ===
-{_format_focus_areas(focus_areas)}
+=== ALL INTERVIEWER FOCUS AREAS ===
+{_format_focus_areas(all_focus_areas)}
 """
 
     follow_up_ctx = ""
     if active_follow_up:
         follow_up_ctx = (
-            f"\n=== ACTIVE FOLLOW-UP ===\n"
+            f"\n=== ACTIVE FOLLOW-UP (question the candidate just answered) ===\n"
+            f"Area: {active_follow_up.get('chosen_area', 'unknown')}\n"
             f"Question: {active_follow_up.get('question', '')}\n"
             f"Format: {active_follow_up.get('format', '')}\n"
         )
         if active_follow_up.get("options"):
             follow_up_ctx += f"Options: {active_follow_up['options']}\n"
         if active_follow_up.get("expected_answer_key"):
-            follow_up_ctx += f"Expected answer key: {active_follow_up['expected_answer_key']}\n"
+            follow_up_ctx += f"Correct answer key: {active_follow_up['expected_answer_key']}\n"
+
+    probed_text = ""
+    if probed_areas:
+        probed_text = f"\n=== ALREADY PROBED AREAS (do NOT repeat) ===\n{', '.join(probed_areas)}\n"
+
+    remaining_text = f"\n=== REMAINING FOCUS AREAS (pick from these, highest priority first) ===\n{_format_remaining_areas(all_focus_areas, probed_areas)}\n"
 
     history_text = ""
     if history:
@@ -294,20 +374,22 @@ Difficulty: {difficulty}
         )
 
     user_message = f"""{follow_up_ctx}
-
 === CANDIDATE ANSWER ===
 {candidate_answer}
 
 === TIME REMAINING ===
 {time_remaining} seconds
-
-{history_text}
+{probed_text}{remaining_text}{history_text}
 
 === YOUR TASK ===
-1. Evaluate the candidate's answer: finding + candidate_depth (SHALLOW/ADEQUATE/STRONG) + answer_rating 1–10.
-2. {_intent_instruction(intent, legal_formats, difficulty)}
+1. Write acknowledgment (1-3 sentences): reference something specific in the candidate's answer.
+   If they got it right, acknowledge it precisely. If partially right, note what they captured and
+   what they missed. If wrong, gently correct. End with a transition into the next question.
+2. Evaluate their answer: finding + candidate_depth (SHALLOW/ADEQUATE/STRONG) + answer_rating 1–10.
+3. {_intent_instruction(intent, legal_formats, difficulty)}
+   - Pick chosen_area from REMAINING FOCUS AREAS (highest priority first).
    - For MCQ/TRUE_FALSE: populate options[] and expected_answer_key.
-   - Set follow_up to null if intent is CLOSE.
+   - Set follow_up to null if intent is CLOSE. Still write acknowledgment.
 
 Respond ONLY with JSON matching this schema:
 {_format_schema_conversational_eval()}"""

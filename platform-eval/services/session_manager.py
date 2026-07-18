@@ -1,5 +1,5 @@
 """
-Session manager — THE single authority  # noqa: E402 for time gate, stage transitions,
+Session manager — THE single authority for time gate, stage transitions,
 policy-matrix selection, weighted score aggregation, and close decisions.
 The LLM never emits finalScore.
 """
@@ -12,7 +12,7 @@ from models.dtos import (
     SubmissionRecord, ConversationTurn,
 )
 from config.score_profiles import get_profile
-from services.steering import select_intent_and_formats, MAX_TURNS
+from services.steering import select_intent_and_formats, MAX_TURNS, compute_max_turns
 from infrastructure.store import session_store
 from infrastructure.logger import log
 
@@ -48,8 +48,9 @@ class SessionManager:
         min_time: int,
         correctness_passed: bool,
         depth: CandidateDepth | None,
+        difficulty: str = "MEDIUM",
     ):
-        difficulty = "MEDIUM"  # overridden by blueprint in eval_core if available
+        max_turns = compute_max_turns(time_remaining, min_time, difficulty)
         return select_intent_and_formats(
             time_remaining=time_remaining,
             min_time=min_time,
@@ -57,6 +58,7 @@ class SessionManager:
             candidate_depth=depth,
             difficulty=difficulty,
             turn_count=session.turn_count,
+            max_turns=max_turns,
         )
 
     # ── Reconcile after LLM call ──────────────────────────────────────────────
@@ -87,12 +89,15 @@ class SessionManager:
         )
         session.submissions.append(record)
 
-        # Append interviewer turn to history
+        # Append interviewer turn to history (acknowledgment + question as one turn)
         if output.follow_up and not force_close:
+            interviewer_content = output.follow_up.question
+            if output.acknowledgment:
+                interviewer_content = f"{output.acknowledgment}\n\n{output.follow_up.question}"
             session.conversation_history.append(ConversationTurn(
                 role="INTERVIEWER",
                 type=output.follow_up.type.value,
-                content=output.follow_up.question,
+                content=interviewer_content,
             ))
 
         # Determine close
@@ -109,8 +114,11 @@ class SessionManager:
             session.stage = Stage.INITIAL_SUBMISSION
             return session, NextAction.CLOSE
 
-        # Set up follow-up
+        # Track which focus area this follow-up targets
         follow_up = output.follow_up
+        if follow_up.chosen_area and follow_up.chosen_area not in session.probed_areas:
+            session.probed_areas.append(follow_up.chosen_area)
+
         follow_up_id = str(uuid.uuid4())
         session.active_follow_up_id = follow_up_id
         session.active_follow_up = follow_up
@@ -134,17 +142,27 @@ class SessionManager:
         blueprint: dict,
         time_remaining: int,
         min_time: int,
+        max_turns: int = MAX_TURNS,
     ) -> tuple[SessionState, NextAction]:
         """Apply the conversational answer evaluation, decide next action."""
-        # Record answer rating
+        # Score the area that was just answered (tracked in active_follow_up.chosen_area)
+        if session.active_follow_up and session.active_follow_up.chosen_area:
+            area = session.active_follow_up.chosen_area
+            session.concept_scores[area] = output.answer_rating
+            session.concept_findings[area] = output.finding
+
+        # Record answer rating for aggregate follow-up score
         session.answer_ratings.append(output.answer_rating)
 
-        # Append candidate turn (already in history from caller, just add interviewer)
+        # Append candidate + interviewer turns to history
         if output.follow_up and not force_close:
+            interviewer_content = output.follow_up.question
+            if output.acknowledgment:
+                interviewer_content = f"{output.acknowledgment}\n\n{output.follow_up.question}"
             session.conversation_history.append(ConversationTurn(
                 role="INTERVIEWER",
                 type=output.follow_up.type.value,
-                content=output.follow_up.question,
+                content=interviewer_content,
             ))
 
         # Determine close
@@ -152,17 +170,24 @@ class SessionManager:
             force_close
             or output.candidate_depth == CandidateDepth.STRONG
             or intent == FollowUpIntent.CLOSE
-            or session.turn_count >= MAX_TURNS
+            or session.turn_count >= max_turns
             or output.follow_up is None
         )
 
         if should_close:
-            report = self._compute_report(session, None, blueprint, time_remaining, gate_fired=force_close, conversational_output=output)
+            report = self._compute_report(
+                session, None, blueprint, time_remaining,
+                gate_fired=force_close, conversational_output=output,
+            )
             session.report = report
             session.closed = True
             return session, NextAction.CLOSE
 
         follow_up = output.follow_up
+        # Track new area being probed
+        if follow_up.chosen_area and follow_up.chosen_area not in session.probed_areas:
+            session.probed_areas.append(follow_up.chosen_area)
+
         session.active_follow_up_id = str(uuid.uuid4())
         session.active_follow_up = follow_up
         session.turn_count += 1
@@ -248,7 +273,7 @@ class SessionManager:
                 finding=fu_finding,
             )
 
-        # Communication / designJudgment — from communication_finding if available
+        # Communication / designJudgment
         comm_key = "designJudgment" if "designJudgment" in profile else "communication"
         if comm_key in profile:
             comm_finding = (
@@ -260,6 +285,16 @@ class SessionManager:
                 rating=6,  # neutral default; ideally rated by LLM at close
                 weight=profile[comm_key],
                 finding=comm_finding,
+            )
+
+        # Per-concept breakdown from follow-up conversation
+        concept_dimensions: dict[str, DimensionResult] = {}
+        for area, rating in session.concept_scores.items():
+            finding = session.concept_findings.get(area, "")
+            concept_dimensions[area] = DimensionResult(
+                rating=rating,
+                weight=0,  # informational only, not part of final_score
+                finding=finding,
             )
 
         # Deterministic weighted score (model never sees this)
@@ -278,6 +313,7 @@ class SessionManager:
             final_score=final_score,
             weight_profile=difficulty,
             dimensions=dimensions,
+            concept_dimensions=concept_dimensions,
             pace=PaceBlock(
                 turns_used=session.turn_count,
                 time_consumed_seconds=elapsed,

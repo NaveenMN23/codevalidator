@@ -1,6 +1,5 @@
 {
   "problemId": "vending-machine-easy-dispense-product",
-  "sessionId": "uuid-supplied-at-runtime",
   "task": {
     "taskType": "FEATURE_IMPLEMENTATION",
     "title": "Vending Machine: Dispense Product",
@@ -8,6 +7,7 @@
     "constraints": [
       "Throw OutOfStockException when the product is not found or quantity <= 0",
       "Throw InsufficientFundsException when amountPaid < product price",
+      "Check stock before checking payment — fail-cheap ordering avoids charging for an unavailable product",
       "Decrement quantity AND persist via productRepository.save(product) — an in-memory decrement alone is a lost update",
       "Change returned must equal amountPaid - price"
     ],
@@ -31,23 +31,10 @@
   },
   "bugMeta": null,
   "evaluation": {
-    "senioritySignals": [
-      "Checks stock before payment — fail-cheap ordering avoids charging for an unavailable product",
-      "Calls productRepository.save(product) after decrementing — not just an in-memory update",
-      "Derives change as amountPaid - price rather than a hardcoded or unrelated value",
-      "Notices that change is only returned/printed and never reconciled against a CashRepository",
-      "Considers @Transactional or optimistic locking for the read-modify-write on quantity"
-    ],
-    "commonMistakes": [
-      "Decrements quantity in memory but forgets to call productRepository.save() — lost update",
-      "Checks payment before stock — charges the buyer for a product that was already out of stock",
-      "Hardcodes change or returns amountPaid instead of amountPaid - price",
-      "No atomicity around the read-modify-write of quantity under concurrent dispenses"
-    ],
     "rubric": {
       "correctness": {
-        "9-10": "All paths handled: both exceptions thrown correctly, stock persisted via save(), change is amountPaid - price",
-        "7-8": "Happy path + exceptions present; one minor gap (e.g. missing save() or incorrect exception ordering)",
+        "9-10": "All paths handled: both exceptions thrown correctly in the right order (stock first, then payment), stock persisted via save(), change is amountPaid - price",
+        "7-8": "Happy path + exceptions present; one minor gap (e.g. wrong exception ordering or missing save())",
         "4-6": "Basic dispense works but misses 1-2 constraints (e.g. no save, wrong exception type)",
         "1-3": "Fundamentally wrong or incomplete — missing exception handling or wrong return"
       },
@@ -55,23 +42,56 @@
         "9-10": "O(1) single findById + single save; candidate names the complexity and mentions concurrent-update safety",
         "7-8": "Correct but one unnecessary extra fetch or no complexity discussion",
         "4-6": "Works but naive (e.g. reloads all products to find by ID)",
-        "1-3": "Ignores efficiency / introduces an obvious anti-pattern"
+        "1-3": "Ignores efficiency or introduces an obvious anti-pattern"
       }
-    }
+    },
+    "senioritySignals": [
+      "Checks stock before payment — fail-cheap ordering avoids charging for an unavailable product",
+      "Calls productRepository.save(product) after decrementing — not just an in-memory update",
+      "Derives change as amountPaid - price rather than a hardcoded or unrelated value",
+      "Notices that change is returned but never reconciled against a CashRepository",
+      "Considers @Transactional or optimistic locking for the read-modify-write on quantity"
+    ],
+    "commonMistakes": [
+      "Decrements quantity in memory but forgets to call productRepository.save() — lost update",
+      "Checks payment before stock — charges the buyer for a product that was already out of stock",
+      "Hardcodes change or returns amountPaid instead of amountPaid - price",
+      "No atomicity around the read-modify-write of quantity under concurrent dispenses"
+    ]
   },
   "followUpContext": {
     "interviewerFocusAreas": [
       {
-        "area": "CORRECTNESS",
-        "scope": "Ordering of stock vs payment checks — does it matter which exception is thrown first? Walk through the case where payment arrives for an already-empty slot and the candidate checks payment before stock."
+        "area": "EXCEPTION_ORDERING",
+        "priority": 1,
+        "preferredFormat": "MCQ",
+        "scope": "Ordering of stock vs payment checks — does it matter which exception is thrown first? Walk through the case where payment arrives for an already-empty slot.",
+        "probeQuestion": "If you check amountPaid < price before checking stock, what bad outcome can happen for the buyer?",
+        "goodAnswerIndicator": "Explains that the buyer gets charged (or mentally expects to get charged) for a product that was already sold out — the correct order is stock-first"
+      },
+      {
+        "area": "PERSISTENCE",
+        "priority": 1,
+        "preferredFormat": "TRUE_FALSE",
+        "scope": "Does the candidate understand that an in-memory decrement without save() is a lost update — invisible at the API level but breaks inventory consistency.",
+        "probeQuestion": "True or False: decrementing product.quantity in Java without calling productRepository.save() will update the database.",
+        "goodAnswerIndicator": "False — JPA/Hibernate only persists changes when save() is called or the entity is managed inside a @Transactional context with dirty checking"
       },
       {
         "area": "CONCURRENCY",
-        "scope": "Read-modify-write on Product.quantity when two buyers hit the same last unit simultaneously — what happens with the naive findById + decrement + save pattern, and how would @Transactional or an atomic UPDATE fix it?"
+        "priority": 2,
+        "preferredFormat": "TEXT",
+        "scope": "Read-modify-write on Product.quantity when two buyers hit the same last unit simultaneously — what happens with naive findById + decrement + save?",
+        "probeQuestion": "What happens when two requests call dispenseProduct() for the same last unit at exactly the same time? Walk me through the race condition.",
+        "goodAnswerIndicator": "Identifies that both threads read quantity=1, both decrement to 0, both call save() — net result is quantity=-1 or one call silently wins; mentions @Transactional or atomic UPDATE as the fix"
       },
       {
         "area": "DESIGN",
-        "scope": "Change is computed but never reconciled against a CashRepository — what would a correct money-flow look like, and how would you model exact-change availability?"
+        "priority": 2,
+        "preferredFormat": "TEXT",
+        "scope": "Change is computed but never reconciled against a CashRepository — what would a correct money-flow look like?",
+        "probeQuestion": "The method returns change, but nowhere in the codebase is the machine's cash balance updated. What's missing and how would you model exact-change availability?",
+        "goodAnswerIndicator": "Proposes a CashRepository (or CashFloat) that tracks available denominations; dispense should fail if machine cannot make change; mentions idempotency for retry scenarios"
       }
     ],
     "expectedApproaches": [
@@ -91,13 +111,26 @@
       "Two concurrent dispenses of the last unit in stock"
     ],
     "scaleUpDimensions": [
-      "Multiple vending machines sharing one inventory store — distributed locking or DB-level atomicity required",
-      "Exact-change availability tracked in CashRepository — dispense should fail if machine cannot make change"
+      { "dimension": "Multiple vending machines sharing one inventory store — distributed locking or DB-level atomicity required", "triggerCondition": "candidate handled single-machine concurrency with @Transactional" },
+      { "dimension": "Exact-change availability tracked in CashRepository — dispense should fail if machine cannot make change", "triggerCondition": "candidate noticed the missing cash reconciliation" }
     ],
-    "followUpIntent": {
-      "type": "EVALUATOR_DECIDES",
-      "hint": "If the candidate did a plain read-decrement-save without @Transactional, probe the concurrent last-unit race condition. If they handled stock cleanly with locking, probe the missing cash/change reconciliation against CashRepository.",
-      "minimumTimeRemainingSeconds": 600
-    }
+    "implementationChallenges": [
+      {
+        "id": "add-transactional",
+        "trigger": "candidate did a plain read-decrement-save without @Transactional or locking",
+        "instruction": "Add @Transactional to dispenseProduct() and explain what isolation level you would choose and why. Then modify the repository to use an atomic UPDATE with a WHERE quantity > 0 guard instead of a read-then-write.",
+        "targetFile": "src/main/java/com/challenge/services/VendingMachineService.java",
+        "acceptanceCriteria": "Two simultaneous calls for the last unit result in exactly one successful dispense and one OutOfStockException, with no inventory going below 0",
+        "difficulty": "MEDIUM"
+      },
+      {
+        "id": "add-cash-repository",
+        "trigger": "candidate noticed change is returned but not reconciled against machine cash",
+        "instruction": "Add a CashRepository that tracks the machine's cash float. dispenseProduct() should throw an InsufficientChangeException if the machine cannot make exact change, and should deduct the dispensed change from the float on success.",
+        "targetFile": "src/main/java/com/challenge/services/VendingMachineService.java",
+        "acceptanceCriteria": "Dispensing when the machine has no coins to make change throws InsufficientChangeException; successful dispense updates the cash float",
+        "difficulty": "MEDIUM"
+      }
+    ]
   }
 }

@@ -58,11 +58,13 @@ class FollowUp(BaseModel):
     format: FollowUpFormat
     question: str
     options: list[str] | None = None
-    # server-only — excluded via candidate_view(); never sent directly
+    # server-only — excluded via candidate_view(); never sent to candidate
     expected_answer_key: str | None = None
+    # tracks which blueprint focus area this question targets
+    chosen_area: str | None = None
 
     def candidate_view(self) -> dict:
-        return self.model_dump(exclude={"expected_answer_key"})
+        return self.model_dump(exclude={"expected_answer_key", "chosen_area"})
 
 
 # ── Score / Report ─────────────────────────────────────────────────────────────
@@ -83,6 +85,8 @@ class EvalReport(BaseModel):
     final_score: int
     weight_profile: str
     dimensions: dict[str, DimensionResult]
+    # per-concept breakdown from follow-up conversation
+    concept_dimensions: dict[str, DimensionResult] = Field(default_factory=dict)
     pace: PaceBlock
 
 
@@ -113,6 +117,10 @@ class SessionState(BaseModel):
     turn_count: int = 0
     closed: bool = False
     report: EvalReport | None = None
+    # concept tracking
+    probed_areas: list[str] = Field(default_factory=list)
+    concept_scores: dict[str, int] = Field(default_factory=dict)
+    concept_findings: dict[str, str] = Field(default_factory=dict)
     # timing
     start_time_seconds: int | None = None
     time_consumed_seconds: int = 0
@@ -134,6 +142,8 @@ class EfficiencyRating(BaseModel):
 
 class CodeEvalOutput(BaseModel):
     """Schema the LLM fills for CODE_SUBMISSION — rates only, never scores."""
+    # 1-3 sentences acknowledging the candidate's code before the follow-up question
+    acknowledgment: str | None = None
     correctness: CorrectnessRating
     efficiency: EfficiencyRating
     follow_up: FollowUp | None = None
@@ -142,6 +152,8 @@ class CodeEvalOutput(BaseModel):
 
 class ConversationalEvalOutput(BaseModel):
     """Schema the LLM fills for CONVERSATIONAL_ANSWER — rates only."""
+    # 1-3 sentences acknowledging the candidate's answer before the next question
+    acknowledgment: str | None = None
     finding: str
     candidate_depth: CandidateDepth
     answer_rating: int = Field(..., ge=1, le=10)
@@ -181,11 +193,13 @@ class ConversationalAnswerRequest(BaseModel):
 # ── Response DTOs ──────────────────────────────────────────────────────────────
 
 class EvaluationBlock(BaseModel):
+    # Interactive acknowledgment shown to candidate before the follow-up question
+    acknowledgment: str | None = None
     correctness: CorrectnessRating | None = None
     efficiency: EfficiencyRating | None = None
     finding: str | None = None
     answer_rating: int | None = None
-    follow_up: dict | None = None  # candidate view (no expected_answer_key)
+    follow_up: dict | None = None  # candidate view (no expected_answer_key or chosen_area)
 
 
 class CodeSubmitResponse(BaseModel):

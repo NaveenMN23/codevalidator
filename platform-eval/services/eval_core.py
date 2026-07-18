@@ -8,7 +8,7 @@ from models.dtos import (
     EvaluationBlock, FollowUpIntent, CandidateDepth, ConversationTurn,
 )
 from services.sources import blueprint_source, solution_source, _filter_files
-from services.steering import select_intent_and_formats, validate_follow_up, build_templated_fallback
+from services.steering import select_intent_and_formats, validate_follow_up, build_templated_fallback, compute_max_turns
 from services import interviewer
 from services.llm_client import llm_client
 from services.session_manager import session_manager
@@ -40,6 +40,7 @@ def handle_code_submission(request: CodeSubmitRequest) -> CodeSubmitResponse:
             session_id=session.session_id,
             stage=session.stage,
             evaluation=EvaluationBlock(
+                acknowledgment="Thank you for your submission. Unfortunately we've run out of time for a detailed review.",
                 correctness=None,
                 efficiency=None,
                 follow_up=None,
@@ -50,14 +51,18 @@ def handle_code_submission(request: CodeSubmitRequest) -> CodeSubmitResponse:
             report=session.report,
         )
 
+    # Dynamic turn cap based on remaining time and difficulty
+    max_turns = compute_max_turns(request.time_remaining_seconds, min_time, difficulty)
+
     # Policy matrix
     intent, legal_formats = select_intent_and_formats(
         time_remaining=request.time_remaining_seconds,
         min_time=min_time,
         correctness_passed=True,  # eval is only invoked after all tests pass
-        candidate_depth=None,  # first submission has no prior depth
+        candidate_depth=None,     # first submission has no prior depth
         difficulty=difficulty,
         turn_count=session.turn_count,
+        max_turns=max_turns,
     )
 
     # Build messages
@@ -70,6 +75,7 @@ def handle_code_submission(request: CodeSubmitRequest) -> CodeSubmitResponse:
         history=[t.model_dump() for t in session.conversation_history],
         time_remaining=request.time_remaining_seconds,
         difficulty=difficulty,
+        probed_areas=list(session.probed_areas),
     )
 
     # LLM call
@@ -91,16 +97,20 @@ def handle_code_submission(request: CodeSubmitRequest) -> CodeSubmitResponse:
             intent,
             legal_formats,
             open_areas,
-            chosen_area=None,
+            chosen_area=output.follow_up.chosen_area,
         ):
             log.warning(f"[{request.session_id}] Follow-up failed guardrail — using templated fallback")
-            first_area = open_areas[0] if open_areas else "the implementation"
+            remaining = [a for a in open_areas if a not in session.probed_areas]
+            first_area = remaining[0] if remaining else (open_areas[0] if open_areas else "the implementation")
+            focus_areas = blueprint.get("followUpContext", {}).get("interviewerFocusAreas", [{}])
+            first_area_obj = next((a for a in focus_areas if a.get("area") == first_area), {})
             output.follow_up.question = build_templated_fallback(
                 area=first_area,
-                scope=blueprint.get("followUpContext", {}).get("interviewerFocusAreas", [{}])[0].get("scope", "") if open_areas else "",
-                hint="",
+                scope=first_area_obj.get("scope", ""),
+                hint=first_area_obj.get("probeQuestion", ""),
                 intent=intent,
             )
+            output.follow_up.chosen_area = first_area
 
     # Reconcile
     force_close = intent == FollowUpIntent.CLOSE
@@ -121,6 +131,7 @@ def handle_code_submission(request: CodeSubmitRequest) -> CodeSubmitResponse:
         session_id=session.session_id,
         stage=session.stage,
         evaluation=EvaluationBlock(
+            acknowledgment=output.acknowledgment,
             correctness=output.correctness,
             efficiency=output.efficiency,
             follow_up=follow_up_view,
@@ -152,7 +163,10 @@ def handle_conversational_answer(request: ConversationalAnswerRequest) -> Conver
         return ConversationalAnswerResponse(
             session_id=session.session_id,
             stage=session.stage,
-            evaluation=EvaluationBlock(finding="Session closed due to time."),
+            evaluation=EvaluationBlock(
+                acknowledgment="Thank you for your answer. We've run out of time, so we'll wrap up here.",
+                finding="Session closed due to time.",
+            ),
             candidate_depth=None,
             next_action=next_action,
             closed=True,
@@ -166,7 +180,10 @@ def handle_conversational_answer(request: ConversationalAnswerRequest) -> Conver
         content=request.answer,
     ))
 
-    # Policy matrix (no prior correctness for conversational — use last submission's
+    # Dynamic turn cap
+    max_turns = compute_max_turns(request.time_remaining_seconds, min_time, difficulty)
+
+    # Policy matrix
     last_correctness = True
     if session.submissions:
         last_eval = session.submissions[-1].evaluation or {}
@@ -179,6 +196,7 @@ def handle_conversational_answer(request: ConversationalAnswerRequest) -> Conver
         candidate_depth=None,
         difficulty=difficulty,
         turn_count=session.turn_count,
+        max_turns=max_turns,
     )
 
     # Build messages
@@ -192,6 +210,7 @@ def handle_conversational_answer(request: ConversationalAnswerRequest) -> Conver
         history=[t.model_dump() for t in session.conversation_history],
         time_remaining=request.time_remaining_seconds,
         difficulty=difficulty,
+        probed_areas=list(session.probed_areas),
     )
 
     # LLM call
@@ -212,6 +231,7 @@ def handle_conversational_answer(request: ConversationalAnswerRequest) -> Conver
         blueprint=blueprint,
         time_remaining=request.time_remaining_seconds,
         min_time=min_time,
+        max_turns=max_turns,
     )
     session_manager.persist(session)
 
@@ -221,6 +241,7 @@ def handle_conversational_answer(request: ConversationalAnswerRequest) -> Conver
         session_id=session.session_id,
         stage=session.stage,
         evaluation=EvaluationBlock(
+            acknowledgment=output.acknowledgment,
             finding=output.finding,
             answer_rating=output.answer_rating,
             follow_up=follow_up_view,

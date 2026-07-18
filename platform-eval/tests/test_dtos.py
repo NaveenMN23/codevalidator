@@ -20,10 +20,11 @@ def _make_follow_up(**kwargs):
     return FollowUp(**defaults)
 
 
-def test_follow_up_candidate_view_excludes_answer_key():
+def test_follow_up_candidate_view_excludes_server_fields():
     fu = _make_follow_up()
     view = fu.candidate_view()
     assert "expected_answer_key" not in view
+    assert "chosen_area" not in view
     assert view["question"] == fu.question
     assert view["options"] == fu.options
 
@@ -70,6 +71,36 @@ def test_session_state_defaults():
     assert s.closed is False
     assert s.turn_count == 0
     assert s.answer_ratings == []
+    assert s.probed_areas == []
+    assert s.concept_scores == {}
+    assert s.concept_findings == {}
+
+
+def test_code_eval_output_acknowledgment():
+    data = {
+        "acknowledgment": "Good fix — you correctly identified the indentation scope issue.",
+        "correctness": {"rating": 8, "passed": True, "finding": "Good"},
+        "efficiency": {"rating": 7, "passed": True, "finding": "OK"},
+    }
+    out = CodeEvalOutput.model_validate(data)
+    assert out.acknowledgment == "Good fix — you correctly identified the indentation scope issue."
+    assert out.follow_up is None
+
+
+def test_follow_up_chosen_area_stripped_from_candidate_view():
+    fu = FollowUp(
+        intent=FollowUpIntent.ESCALATE,
+        type=FollowUpType.CONVERSATIONAL,
+        format=FollowUpFormat.MCQ,
+        question="What isolation level would you use?",
+        options=["A) READ_COMMITTED", "B) SERIALIZABLE"],
+        expected_answer_key="B",
+        chosen_area="CONCURRENCY",
+    )
+    view = fu.candidate_view()
+    assert "chosen_area" not in view
+    assert "expected_answer_key" not in view
+    assert view["question"] == fu.question
 
 
 def test_conversational_eval_validates():

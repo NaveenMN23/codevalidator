@@ -59,7 +59,6 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-password}
-      EXECUTION_SERVICE_URL: http://execution-service:8001
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ${AWS_REGION:-us-east-1}
@@ -115,14 +114,12 @@ services:
       - CODEGEN_REQUEST_QUEUE=codegen-request-queue
       - CODEGEN_RESULTS_QUEUE=codegen-results-queue
       - POSTGRES_DSN=${POSTGRES_DSN:-postgresql://admin:password@postgres:5432/interview_db}
-      - EXECUTION_SERVICE_URL=http://execution-service:8001
     volumes:
       - ./generated:/generated
     depends_on:
       - backend
       - redis
       - rabbitmq
-      - execution-service
       - postgres
 
   platform-eval:
@@ -196,33 +193,6 @@ services:
       - "5173:80"
     depends_on:
       - backend
-
-  # Builds the Java executor image with the base Spring Boot dependency tree
-  # baked into the local Maven repo via `mvn dependency:go-offline`.
-  java-executor-build:
-    build:
-      context: ./platform-execution_service/executors/java
-      dockerfile: Dockerfile
-    image: platform/java-executor:latest
-    command: echo "Java executor image built"
-
-  execution-service:
-    build: ./platform-execution_service
-    container_name: platform_execution_service
-    ports:
-      - "8001:8001"
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      - AWS_REGION=${AWS_REGION:-ap-southeast-2}
-      - AWS_S3_CHALLENGES_BUCKET=${AWS_S3_CHALLENGES_BUCKET:-challenges-repo}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/sessions:/tmp/sessions
-      - ./challenges:/challenges:ro
-    depends_on:
-      java-executor-build:
-        condition: service_completed_successfully
 
 volumes:
   postgres_data:
