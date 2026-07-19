@@ -7,7 +7,12 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 export async function fetchChallenges(): Promise<Challenge[]> {
-  const response = await fetch('/api/v1/problems');
+  // Dashboard treats this as the full catalog (all client-side filtering/grouping) —
+  // a plain fetch() defaults to the backend's Pageable default (size 20), silently
+  // truncating the list once published problems exceed that. Request a size large
+  // enough to cover the whole catalog in one call instead of building out pagination
+  // for a list this small (dozens to low hundreds of problems).
+  const response = await fetch('/api/v1/problems?size=500&sort=createdAt,desc');
   if (!response.ok) throw new Error('Failed to fetch challenges');
   const data = await response.json();
   // Backend returns PageResponse<ProblemSummaryResponse> — extract content array

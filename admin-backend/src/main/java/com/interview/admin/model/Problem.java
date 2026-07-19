@@ -48,6 +48,9 @@ public class Problem {
     @Column(name = "ecr_image_uri")
     private String ecrImageUri;
 
+    @Column(name = "hidden_test_key")
+    private String hiddenTestKey;
+
     @Column(name = "is_published", nullable = false)
     private boolean isPublished = false;
 
@@ -102,6 +105,9 @@ public class Problem {
     public void setEcrImageUri(String ecrImageUri) {
         this.ecrImageUri = ecrImageUri;
     }
+
+    public String getHiddenTestKey() { return hiddenTestKey; }
+    public void setHiddenTestKey(String hiddenTestKey) { this.hiddenTestKey = hiddenTestKey; }
 
     public boolean isPublished() { return isPublished; }
     public Instant getCreatedAt() { return createdAt; }
