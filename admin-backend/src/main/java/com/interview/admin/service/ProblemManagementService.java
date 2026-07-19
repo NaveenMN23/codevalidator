@@ -105,14 +105,16 @@ public class ProblemManagementService {
             if (scenarios.isEmpty()) {
                 String originalSlug = challengeSlug + "-" + language.toLowerCase();
                 String slug = uniqueSlug(originalSlug);
-                String difficulty = (tiers != null && !tiers.isEmpty()) ? tiers.get(0).toUpperCase() : "EASY";
+                String gmTier = (tiers != null && !tiers.isEmpty()) ? tiers.get(0) : "easy";
+                String difficulty = gmTier.toUpperCase();
                 // S3 key format: {language}/{challengeSlug}.zip — must match what StorageClient uploads
                 String problemLink = language.toLowerCase() + "/" + challengeSlug + ".zip";
                 Problem p = Problem.create(slug, toTitleCase((challengeSlug + " " + language).replace('-', ' ')), description, difficulty, problemLink, tags);
                 p.setTiers(tiers != null ? tiers : List.of());
                 p.setLanguage(language);
-                p.setTier((tiers != null && !tiers.isEmpty()) ? tiers.get(0) + "-scenario-1" : "easy-scenario-1");
+                p.setTier(gmTier + "-scenario-1");
                 p.setPublished(false);
+                p.setHiddenTestKey(extractGoldMasterKey(job.getResultJson(), language, gmTier));
                 Problem saved = problemRepository.save(p);
                 String bpJson = blueprintsBySlug.get(slug);
                 if (bpJson != null) {
@@ -146,6 +148,7 @@ public class ProblemManagementService {
                 p.setLanguage(language);
                 p.setTier(tag);
                 p.setPublished(false);
+                p.setHiddenTestKey(extractGoldMasterKey(job.getResultJson(), language, tierStr));
                 String bpJson = blueprintsBySlug.get(challengeSlug + "-" + tag);
                 Problem saved = problemRepository.save(p);
                 if (bpJson != null) {
@@ -224,6 +227,25 @@ public class ProblemManagementService {
             log.warn("Could not extract scenarios from resultJson: {}", e.getMessage());
         }
         return List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractGoldMasterKey(String resultJson, String language, String tier) {
+        if (resultJson == null) return null;
+        try {
+            Map<String, Object> result = objectMapper.readValue(resultJson, new TypeReference<>() {});
+            Object manifests = result.get("manifests");
+            if (!(manifests instanceof Map<?, ?> manifestsMap)) return null;
+            Object langManifest = manifestsMap.get(language);
+            if (!(langManifest instanceof Map<?, ?> lm)) return null;
+            Object keys = lm.get("goldMasterKeys");
+            if (!(keys instanceof Map<?, ?> keysMap)) return null;
+            Object key = keysMap.get(tier);
+            return key instanceof String s ? s : null;
+        } catch (Exception e) {
+            log.warn("Could not extract goldMasterKey for lang={} tier={}: {}", language, tier, e.getMessage());
+            return null;
+        }
     }
 
     private String extractSlug(String resultJson, String fallbackPrompt) {

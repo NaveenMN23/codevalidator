@@ -53,19 +53,38 @@ def _classify_compile_error(error_output: str, delta_phase: bool = False) -> str
             "a corresponding generated file in your output."
         )
     if "cannot find symbol" in error_output:
-        if ": method" in error_output:
+        # Maven right-pads "symbol:" with extra spaces so its value column-aligns with
+        # "location:" below it (e.g. "symbol:   method foo()" vs "location: class Bar").
+        # A plain ": method"/": class"/": variable" substring check breaks on that padding
+        # and ends up accidentally matching the unrelated "location:" line instead — so
+        # anchor explicitly to the "symbol:" line's kind token, tolerant of any spacing.
+        symbol_kind_match = re.search(r"symbol:\s*(method|class|variable)\b", error_output)
+        symbol_kind = symbol_kind_match.group(1) if symbol_kind_match else None
+
+        if symbol_kind == "method":
+            if delta_phase:
+                return (
+                    "You called a method that does not exist in the class. "
+                    "Check <stub_file_content> for the actual methods defined there. "
+                    "Do not invent helper methods — implement the logic inline."
+                )
             return (
-                "You called a method that does not exist in the class. "
-                "Check <stub_file_content> for the actual methods defined there. "
-                "Do not invent helper methods — implement the logic inline."
+                "You called a method that doesn't exist on a class you generated in this "
+                "same skeleton — most often a missing getter/setter, or a helper method you "
+                "referenced but never defined. Check every class in your own `files` output: "
+                "any class with private fields must have real Lombok `@Getter`/`@Setter` "
+                "annotations or fully written accessor methods, never a `// Getters and "
+                "setters...` placeholder; any helper method you call on `this` must actually "
+                "be defined in that same class, not just invented. Add the missing method to "
+                "that class's file, or fix the caller to match what the class actually provides."
             )
-        if ": class" in error_output and "com.challenge" in error_output:
+        if symbol_kind == "class" and "com.challenge" in error_output:
             return (
                 "You referenced a project class that does not exist in the skeleton. "
                 "Check <skeleton_classes> for the exact class names available. "
                 "Only reference classes listed there."
             )
-        if ": variable" in error_output:
+        if symbol_kind == "variable":
             # Java reports "cannot find symbol: variable Foo" when Foo is used as a type
             # but the class file was never generated.
             if delta_phase:
@@ -479,6 +498,7 @@ class ScaffoldGenerator:
 
             # Upload gold masters + scaffold ZIPs
             gold_master_s3_refs: dict[str, str] = {}  # tier → s3:// URI, built as each upload succeeds
+            gold_master_keys: dict[str, str] = {}  # tier → bucket-relative key, for hidden_test_key
             for tier in active_tiers:
                 if tier in skipped_tiers:
                     continue
@@ -491,9 +511,9 @@ class ScaffoldGenerator:
                 test_hidden = {tag: d.test_hidden for tag, d in deltas.items()}
 
                 try:
-                    compile_validator.validate_compilation(safe_gold_master, language)
+                    compile_validator.validate_compilation(safe_gold_master, language, run_tests=True)
                 except CompileValidationError as e:
-                    error_msg = f"ScaffoldGenerator: compile validation failed tier={tier} lang={language}: {e}"
+                    error_msg = f"ScaffoldGenerator: compile/test validation failed tier={tier} lang={language}: {e}"
                     log.error(error_msg)
                     raise RuntimeError(error_msg)
 
@@ -503,6 +523,7 @@ class ScaffoldGenerator:
                         challenge_name, tier, language,
                     )
                     gold_master_s3_refs[tier] = f"s3://gold-masters/{language}/{challenge_name}-{tier}.zip"
+                    gold_master_keys[tier] = f"{language}/{challenge_name}-{tier}.zip"
                 except Exception as e:
                     error_msg = f"ScaffoldGenerator: gold master upload failed tier={tier} lang={language}: {e}"
                     log.error(error_msg)
@@ -536,6 +557,8 @@ class ScaffoldGenerator:
                         log.info(f"ScaffoldGenerator: checkpoint written for tier={tier} lang={language}")
                     except Exception as e:
                         log.warning(f"ScaffoldGenerator: failed to write checkpoint tier={tier} lang={language}: {e}")
+
+            manifest["goldMasterKeys"] = gold_master_keys
 
             # Phase 3 — Blueprints (language-level, after all tiers)
             if settings.enable_blueprint_generation and settings.enable_llm:

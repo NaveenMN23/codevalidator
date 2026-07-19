@@ -14,7 +14,8 @@ For a detailed technical breakdown, see the **[Architecture Documentation](./ARC
 ## Service Map
 - **[Platform Backend](./platform-backend_service):** Java (Spring Boot) managing core logic, users, submissions, and Fargate orchestration.
 - **[Platform UI](./platform-ui):** React (Vite) frontend providing the "CodeForge" IDE experience.
-- **[Codegen](./platform-codegen):** Service for generating challenge assets, building problem Docker images, and pushing them to ECR.
+- **[Codegen](./platform-codegen):** Service for generating challenge assets (scaffolds, gold masters, hidden tests) and uploading them to S3.
+- **[Admin Backend](./admin-backend):** Java (Spring) service that consumes codegen's RabbitMQ results, manages problem records, and owns building/pushing problem Docker images to ECR.
 - **Fargate Sandbox Tasks:** Short-lived AWS Fargate containers (one per user+problem session) running problem-specific Docker images from ECR with an embedded sandbox HTTP server.
 
 ## Getting Started
@@ -73,7 +74,7 @@ User hits Submit
 10 min inactivity → Redis key expires → Fargate task self-terminates
 ```
 
-Each Fargate container runs a tiny embedded FastAPI server (`sandbox_server.py`) that writes files to `/app` and runs the build command. Hidden test injection happens in the backend before the request is forwarded — the sandbox is intentionally kept dumb.
+Each Fargate container runs a tiny embedded Go HTTP server (`sandbox-runner`, built from `admin-backend/src/main/resources/sandbox-runner/main.go` and baked into every problem image by `DockerfileTemplates`) that writes files to `/app` and runs the build command. Hidden test injection happens in the backend before the request is forwarded — the sandbox is intentionally kept dumb.
 
 ### Why Not Share One Container Per Problem?
 
@@ -101,12 +102,12 @@ A warm pool (pre-spawned idle containers per problem) would eliminate the cold s
 
 ECR adds ~$1/month for image storage (shared base layers mean 50 problems ≠ 50× the storage). A VPC endpoint for ECR (~$7/month) eliminates data-transfer charges for image pulls within the region.
 
-### What platform-codegen Owns
+### What admin-backend Owns
 
-After publishing a problem, platform-codegen is responsible for:
-1. Building the problem's Docker image (base executor image + problem-specific dependencies pre-compiled)
-2. Pushing the image to ECR
-3. Writing the resulting ECR URI back to the problem's `ecr_image_uri` column in the DB
+After codegen publishes a problem's scaffold to S3 and dispatches its RabbitMQ result, `admin-backend`'s `DockerImageService` is responsible for:
+1. Extracting the problem's dependency manifest (`pom.xml`/`requirements.txt`/`package.json`) from the scaffold ZIP and building the problem's Docker image (dependencies pre-fetched offline, `sandbox-runner` binary baked in as the entrypoint)
+2. Health-checking the built image (`sandbox-runner`'s `/health` endpoint) before pushing
+3. Pushing the image to ECR and writing the resulting URI back to the problem's `ecr_image_uri` column in the DB, then marking the problem published
 
 The backend returns `422 Unprocessable Entity` if `ecr_image_uri` is null, which surfaces clearly during development when an image hasn't been pushed yet.
 
@@ -119,7 +120,7 @@ The following must exist before Fargate execution works (AWS console or IaC, out
 | ECS Cluster | Hosts Fargate tasks |
 | Private subnets (×2 min) | Task network placement |
 | Security group for tasks | Allow inbound :8080 from backend SG only |
-| ECR repository per problem | Stores problem Docker images |
+| ECR repository (shared, `ECR_REPOSITORY_URI`) | Stores problem Docker images, one tag per problem slug |
 | IAM task role | Allows tasks to run; no S3/ECS access needed |
 | IAM execution role | Allows ECS to pull from ECR and push logs |
 

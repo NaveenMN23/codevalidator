@@ -38,6 +38,7 @@ You will receive:
 
 Use `@SpringBootTest(webEnvironment = RANDOM_PORT)` with `TestRestTemplate`.
 Use `@BeforeEach` to reset and seed the database to a known state.
+Do NOT use `@Sql` pointing at files under `db/migration/` to reset state — Flyway already runs those on startup and re-running them in a test is invalid. Rely on `@Transactional` for auto-rollback between tests, or seed via the injected repository in `@BeforeEach`.
 
 **MUST FAIL** against `bug_code` (the broken version — the bug causes observable wrong behaviour).
 **MUST PASS** against `function_body` (the correct fix).
