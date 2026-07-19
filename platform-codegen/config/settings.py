@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     openai_max_tokens: int = 2048
     openai_max_tokens_impl: int = 8192  # Reduced from 16384 to avoid TPM limits
     openai_max_tokens_test: int = 4096  # Reduced from 8192 to avoid TPM limits
+    openai_tpm_limit: int = 28000  # headroom under this account's observed 30,000 real TPM cap
 
     # Redis
     redis_host: str = "localhost"

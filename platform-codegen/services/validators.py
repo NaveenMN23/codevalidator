@@ -83,6 +83,25 @@ class SkeletonOutput(BaseModel):
         return self
 
 
+class SkeletonPatchOutput(BaseModel):
+    """Incremental compile-retry patch: only new/corrected files, merged into the
+    existing skeleton rather than replacing it."""
+    files: dict[str, str] = {}
+    remove_files: list[str] = []
+
+    @model_validator(mode="after")
+    def at_least_one_change(self) -> "SkeletonPatchOutput":
+        if not self.files and not self.remove_files:
+            raise ValueError(
+                "Provide at least one file to add/fix in `files`, or a path to delete "
+                "in `remove_files`."
+            )
+        for path, content in self.files.items():
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError(f"File {path!r} has empty content")
+        return self
+
+
 class FunctionDeltaOutput(BaseModel):
     """Output from Phase 2b function delta call — one function body + its hidden test.
 
@@ -93,6 +112,8 @@ class FunctionDeltaOutput(BaseModel):
     test_hidden: str
     test_visible: str
     bug_code: str | None = None
+    imports: list[str] = []
+    fields: list[str] = []
 
     @field_validator("function_body")
     @classmethod
