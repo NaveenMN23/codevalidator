@@ -1,4 +1,4 @@
-import type { Challenge, SubmissionRequest, GradingResult } from './workspace.types';
+import type { Challenge, SubmissionRequest, GradingResult, TestCaseResult } from './workspace.types';
 import { useAppStore } from '../../store';
 
 function getAuthHeaders(): Record<string, string> {
@@ -100,6 +100,7 @@ export interface RunResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  testResults: TestCaseResult[];
 }
 
 export async function runChallenge(challengeId: string, files: Record<string, string>): Promise<RunResult> {

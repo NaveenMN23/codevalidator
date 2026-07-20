@@ -4,8 +4,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.mainservice.dto.RunResponse;
+import com.interview.mainservice.dto.TestCaseResult;
 import com.interview.mainservice.infrastructure.ChallengeStorageService;
 import com.interview.mainservice.repository.SessionRepository;
+import com.interview.mainservice.testreport.JUnitXmlReportParser;
+import com.interview.mainservice.testreport.ReportFile;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -134,9 +137,10 @@ public class ExecutionService {
                 .build();
     }
 
-    public RunResponse execute(String sessionId, String ecrImageUri, Map<String, String> files, String command) {
+    public RunResponse execute(String sessionId, String ecrImageUri, String language, Map<String, String> files,
+                               String command) {
         String privateIp = getOrSpawnTask(sessionId, ecrImageUri);
-        RunResponse response = forwardToSandbox(sessionId, privateIp, files, command);
+        RunResponse response = forwardToSandbox(sessionId, privateIp, language, files, command);
         sessionStore.refreshTtl(sessionId, sessionTtlSeconds);
         return response;
     }
@@ -146,11 +150,15 @@ public class ExecutionService {
         String privateIp = getOrSpawnTask(sessionId, ecrImageUri);
 
         HiddenTestResult hiddenTest = fetchHiddenTest(hiddenTestKey, language);
-        Map<String, String> allFiles = new HashMap<>(files);
-        allFiles.putAll(hiddenTest.lockedFiles());
+        // Gold-master src/ files are a fallback for anything the candidate's submission
+        // is missing (e.g. a supporting class the hidden test needs to compile) — the
+        // candidate's own files must win on any path collision, or we'd grade our own
+        // reference solution instead of what they wrote.
+        Map<String, String> allFiles = new HashMap<>(hiddenTest.referenceFiles());
+        allFiles.putAll(files);
         allFiles.put(hiddenTest.hiddenTestPath(), hiddenTest.hiddenTestContent());
 
-        RunResponse response = forwardToSandbox(sessionId, privateIp, allFiles, command);
+        RunResponse response = forwardToSandbox(sessionId, privateIp, language, allFiles, command);
         sessionStore.refreshTtl(sessionId, sessionTtlSeconds);
         return response;
     }
@@ -415,7 +423,8 @@ public class ExecutionService {
     // dead, so a single hiccup no longer throws away an otherwise-healthy warm session.
     private static final int SANDBOX_REQUEST_ATTEMPTS = 2;
 
-    private RunResponse forwardToSandbox(String sessionId, String privateIp, Map<String, String> files, String command) {
+    private RunResponse forwardToSandbox(String sessionId, String privateIp, String language,
+                                         Map<String, String> files, String command) {
         SandboxRequest body = new SandboxRequest(files, command);
         String json;
         try {
@@ -436,18 +445,23 @@ public class ExecutionService {
             try {
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() != 200) {
-                    return new RunResponse(false, "", "Sandbox returned HTTP " + response.statusCode(), -1);
+                    return new RunResponse(false, "", "Sandbox returned HTTP " + response.statusCode(), -1, List.of());
                 }
 
                 SandboxResponse parsed = objectMapper.readValue(response.body(), SandboxResponse.class);
-                return new RunResponse(parsed.success(), parsed.stdout(), parsed.stderr(), parsed.exitCode());
+                List<TestCaseResult> testResults = parsed.reportFiles() == null || parsed.reportFiles().isEmpty()
+                        ? List.of()
+                        : JUnitXmlReportParser.parse(parsed.reportFiles(), language);
+                return new RunResponse(parsed.success(), parsed.stdout(), parsed.stderr(), parsed.exitCode(),
+                        testResults);
             } catch (IOException e) {
                 lastFailure = e;
                 log.warn("Sandbox request to {} failed (attempt {}/{}) for session {}: {}",
                         privateIp, attempt, SANDBOX_REQUEST_ATTEMPTS, sessionId, e.toString());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                return new RunResponse(false, "", "Failed to reach execution container: " + e.getMessage(), -1);
+                return new RunResponse(false, "", "Failed to reach execution container: " + e.getMessage(), -1,
+                        List.of());
             }
         }
 
@@ -457,7 +471,8 @@ public class ExecutionService {
         log.warn("Evicting session {} after {} failed attempts to reach {}: {}",
                 sessionId, SANDBOX_REQUEST_ATTEMPTS, privateIp, lastFailure);
         sessionStore.deleteSession(sessionId);
-        return new RunResponse(false, "", "Failed to reach execution container: " + lastFailure.getMessage(), -1);
+        return new RunResponse(false, "", "Failed to reach execution container: " + lastFailure.getMessage(), -1,
+                List.of());
     }
 
     private HiddenTestResult fetchHiddenTest(String hiddenTestKey, String language) {
@@ -467,7 +482,7 @@ public class ExecutionService {
                         .key(hiddenTestKey)
                         .build());
 
-        Map<String, String> lockedFiles = new HashMap<>();
+        Map<String, String> referenceFiles = new HashMap<>();
         String hiddenTestPath = null;
         String hiddenTestContent = null;
 
@@ -479,7 +494,7 @@ public class ExecutionService {
                 String content = new String(zip.readAllBytes());
 
                 if (name.startsWith("src/")) {
-                    lockedFiles.put(name, content);
+                    referenceFiles.put(name, content);
                 } else if (name.startsWith("test-hidden/") && hiddenTestContent == null) {
                     hiddenTestContent = content;
                     hiddenTestPath = resolveHiddenTestPath(content, language);
@@ -496,7 +511,7 @@ public class ExecutionService {
                     "No hidden test found for key: " + hiddenTestKey);
         }
 
-        return new HiddenTestResult(lockedFiles, hiddenTestPath, hiddenTestContent);
+        return new HiddenTestResult(referenceFiles, hiddenTestPath, hiddenTestContent);
     }
 
     private String resolveHiddenTestPath(String content, String language) {
@@ -527,7 +542,8 @@ public class ExecutionService {
     private record SandboxRequest(Map<String, String> files, String command) {}
 
     private record SandboxResponse(boolean success, String stdout, String stderr,
-                                   @JsonProperty("exit_code") int exitCode) {}
+                                   @JsonProperty("exit_code") int exitCode,
+                                   @JsonProperty("report_files") List<ReportFile> reportFiles) {}
 
-    public record HiddenTestResult(Map<String, String> lockedFiles, String hiddenTestPath, String hiddenTestContent) {}
+    public record HiddenTestResult(Map<String, String> referenceFiles, String hiddenTestPath, String hiddenTestContent) {}
 }
