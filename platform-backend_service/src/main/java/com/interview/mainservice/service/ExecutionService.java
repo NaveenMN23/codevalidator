@@ -1,6 +1,7 @@
 package com.interview.mainservice.service;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.mainservice.dto.RunResponse;
 import com.interview.mainservice.infrastructure.ChallengeStorageService;
@@ -67,6 +68,7 @@ public class ExecutionService {
     private static final int TASK_START_POLL_INTERVAL_MS = 3_000;
     private static final int TASK_START_TIMEOUT_MS = 90_000;
     private static final int SPAWN_LOCK_TTL_SECONDS = 100;
+    private static final Duration SESSION_HEALTH_CHECK_TIMEOUT = Duration.ofSeconds(2);
 
     private static final Map<String, String> LANGUAGE_COMMANDS = Map.of(
             "java",   "mvn -o test -Dsurefire.skipAfterFailureCount=1",
@@ -134,7 +136,7 @@ public class ExecutionService {
 
     public RunResponse execute(String sessionId, String ecrImageUri, Map<String, String> files, String command) {
         String privateIp = getOrSpawnTask(sessionId, ecrImageUri);
-        RunResponse response = forwardToSandbox(privateIp, files, command);
+        RunResponse response = forwardToSandbox(sessionId, privateIp, files, command);
         sessionStore.refreshTtl(sessionId, sessionTtlSeconds);
         return response;
     }
@@ -148,7 +150,7 @@ public class ExecutionService {
         allFiles.putAll(hiddenTest.lockedFiles());
         allFiles.put(hiddenTest.hiddenTestPath(), hiddenTest.hiddenTestContent());
 
-        RunResponse response = forwardToSandbox(privateIp, allFiles, command);
+        RunResponse response = forwardToSandbox(sessionId, privateIp, allFiles, command);
         sessionStore.refreshTtl(sessionId, sessionTtlSeconds);
         return response;
     }
@@ -159,11 +161,16 @@ public class ExecutionService {
      * while the ~30-60s cold start happens in the background.
      */
     public void warmUp(String sessionId, String ecrImageUri) {
-        if (sessionStore.getSession(sessionId).isPresent()) {
-            return;
-        }
         executionServiceExecutor.submit(() -> {
             try {
+                Optional<SessionRepository.SessionEntry> existing = sessionStore.getSession(sessionId);
+                if (existing.isPresent()) {
+                    if (isSessionAlive(existing.get())) {
+                        return;
+                    }
+                    log.info("Discarding stale session {} (failed health check), respawning", sessionId);
+                    sessionStore.deleteSession(sessionId);
+                }
                 spawnAndRegister(sessionId, ecrImageUri);
             } catch (Exception e) {
                 log.warn("Warm-up spawn failed for session {}: {}", sessionId, e.getMessage());
@@ -172,9 +179,37 @@ public class ExecutionService {
     }
 
     private String getOrSpawnTask(String sessionId, String ecrImageUri) {
-        return sessionStore.getSession(sessionId)
-                .map(SessionRepository.SessionEntry::privateIp)
-                .orElseGet(() -> spawnAndRegister(sessionId, ecrImageUri));
+        Optional<SessionRepository.SessionEntry> existing = sessionStore.getSession(sessionId);
+        if (existing.isPresent()) {
+            if (isSessionAlive(existing.get())) {
+                return existing.get().privateIp();
+            }
+            log.info("Discarding stale session {} (failed health check), respawning", sessionId);
+            sessionStore.deleteSession(sessionId);
+        }
+        return spawnAndRegister(sessionId, ecrImageUri);
+    }
+
+    // A cached session's privateIp can point at a task that already died (killed by cleanup,
+    // crashed, reclaimed) while its Redis record is still within TTL. Trusting that record
+    // blindly means warmUp() silently no-ops forever (a 202 that starts nothing), and a real
+    // Run hangs until forwardToSandbox's own retry+evict kicks in minutes later. This fast
+    // probe catches a dead session immediately instead.
+    private boolean isSessionAlive(SessionRepository.SessionEntry session) {
+        try {
+            HttpRequest healthRequest = HttpRequest.newBuilder()
+                    .uri(URI.create("http://" + session.privateIp() + ":" + sandboxServerPort + "/health"))
+                    .timeout(SESSION_HEALTH_CHECK_TIMEOUT)
+                    .GET()
+                    .build();
+            HttpResponse<Void> response = httpClient.send(healthRequest, HttpResponse.BodyHandlers.discarding());
+            return response.statusCode() == 200;
+        } catch (IOException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     /**
@@ -371,28 +406,58 @@ public class ExecutionService {
                         "Could not determine container IP address"));
     }
 
-    private RunResponse forwardToSandbox(String privateIp, Map<String, String> files, String command) {
+    // ECS reassigns a stopped task's private IP to a new task fairly quickly. The JDK
+    // HttpClient's connection pool is keyed on host:port, so it can hand back a keep-alive
+    // connection that was opened to a now-dead task at that same IP — the write succeeds
+    // locally but nothing ever answers, and the call hangs until it times out. Connection:
+    // close stops the client from pooling these connections at all, and a single retry with
+    // a fresh connection covers any one-off failure that isn't actually about the task being
+    // dead, so a single hiccup no longer throws away an otherwise-healthy warm session.
+    private static final int SANDBOX_REQUEST_ATTEMPTS = 2;
+
+    private RunResponse forwardToSandbox(String sessionId, String privateIp, Map<String, String> files, String command) {
         SandboxRequest body = new SandboxRequest(files, command);
+        String json;
         try {
-            String json = objectMapper.writeValueAsString(body);
+            json = objectMapper.writeValueAsString(body);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize sandbox request", e);
+        }
+
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= SANDBOX_REQUEST_ATTEMPTS; attempt++) {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("http://" + privateIp + ":" + sandboxServerPort + "/execute"))
                     .timeout(Duration.ofSeconds(90))
                     .header("Content-Type", "application/json")
+                    .header("Connection", "close")
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200) {
+                    return new RunResponse(false, "", "Sandbox returned HTTP " + response.statusCode(), -1);
+                }
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                return new RunResponse(false, "", "Sandbox returned HTTP " + response.statusCode(), -1);
+                SandboxResponse parsed = objectMapper.readValue(response.body(), SandboxResponse.class);
+                return new RunResponse(parsed.success(), parsed.stdout(), parsed.stderr(), parsed.exitCode());
+            } catch (IOException e) {
+                lastFailure = e;
+                log.warn("Sandbox request to {} failed (attempt {}/{}) for session {}: {}",
+                        privateIp, attempt, SANDBOX_REQUEST_ATTEMPTS, sessionId, e.toString());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return new RunResponse(false, "", "Failed to reach execution container: " + e.getMessage(), -1);
             }
-
-            SandboxResponse parsed = objectMapper.readValue(response.body(), SandboxResponse.class);
-            return new RunResponse(parsed.success(), parsed.stdout(), parsed.stderr(), parsed.exitCode());
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            return new RunResponse(false, "", "Failed to reach execution container: " + e.getMessage(), -1);
         }
+
+        // Every attempt failed on its own fresh connection, so this isn't a stale pooled
+        // connection — the task itself is genuinely unreachable. Evict the session so the
+        // next request respawns instead of repeating this same failure until the TTL expires.
+        log.warn("Evicting session {} after {} failed attempts to reach {}: {}",
+                sessionId, SANDBOX_REQUEST_ATTEMPTS, privateIp, lastFailure);
+        sessionStore.deleteSession(sessionId);
+        return new RunResponse(false, "", "Failed to reach execution container: " + lastFailure.getMessage(), -1);
     }
 
     private HiddenTestResult fetchHiddenTest(String hiddenTestKey, String language) {
