@@ -1,4 +1,4 @@
-import type { Challenge, SubmissionRequest, GradingResult, TestCaseResult } from './workspace.types';
+import type { Challenge, SubmissionRequest, GradingResult, TestCaseResult, SubmissionSummary, SubmissionDetail } from './workspace.types';
 import { useAppStore } from '../../store';
 
 function getAuthHeaders(): Record<string, string> {
@@ -134,6 +134,22 @@ export async function submitChallenge(payload: SubmissionRequest): Promise<Gradi
     }),
   });
   if (!response.ok) throw new Error('Submission failed');
+  return response.json();
+}
+
+export async function fetchSubmissions(challengeId: string): Promise<SubmissionSummary[]> {
+  const response = await fetch(`/api/v1/problems/${challengeId}/submissions`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) throw new Error('Failed to fetch submissions');
+  return response.json();
+}
+
+export async function fetchSubmissionDetail(challengeId: string, submissionId: string): Promise<SubmissionDetail> {
+  const response = await fetch(`/api/v1/problems/${challengeId}/submissions/${submissionId}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) throw new Error('Failed to fetch submission');
   return response.json();
 }
 

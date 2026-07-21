@@ -29,6 +29,18 @@ export interface TestCaseResult {
   stackTrace: string | null;
 }
 
+export interface SubmissionSummary {
+  id: string;
+  status: 'COMPLETED' | 'FAILED';
+  score: number | null;
+  submittedAt: string;
+}
+
+export interface SubmissionDetail extends SubmissionSummary {
+  logs: string | null;
+  files: Record<string, string>;
+}
+
 export interface GradingResult {
   id: string;
   status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'TIMEOUT';

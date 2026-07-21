@@ -8,15 +8,16 @@ import { FileExplorer } from './FileExplorer';
 import { FeedbackDisplay } from './FeedbackDisplay';
 import { TestResultsList } from './TestResultsList';
 import { DraftResumeDialog } from './DraftResumeDialog';
+import { SubmissionsList } from './SubmissionsList';
 import {
   Play, Send, RefreshCcw, LayoutGrid, BookOpen,
   ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Terminal as TerminalIcon,
-  RotateCcw, Sparkles, Sun, Moon, AlertTriangle
+  RotateCcw, Sparkles, Sun, Moon, AlertTriangle, History, X
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
-import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge, openWorkspaceSession } from '../api';
+import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge, openWorkspaceSession, fetchSubmissionDetail } from '../api';
 import type { DraftData } from '../api';
-import type { GradingResult, TestCaseResult } from '../workspace.types';
+import type { GradingResult, TestCaseResult, SubmissionDetail } from '../workspace.types';
 import './Workspace.css';
 
 // Plain in-memory file tree — same shape WebContainer's API used (kept for compatibility
@@ -59,7 +60,9 @@ export function Workspace() {
   const [showExplorer, setShowExplorer] = useState(true);
   const [showExplorerPanel, setShowExplorerPanel] = useState(true);
   const [showTerminal, setShowTerminal] = useState(true);
-  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'feedback'>('problem');
+  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'feedback' | 'submissions'>('problem');
+  const [viewingSubmission, setViewingSubmission] = useState<SubmissionDetail | null>(null);
+  const [submissionsRefreshKey, setSubmissionsRefreshKey] = useState(0);
   const [timeLeft, setTimeLeft] = useState(3600); // 60 minutes default
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,6 +164,7 @@ export function Workspace() {
       setBootError(null);
       setIsBooting(true);
       setPendingDraft(null);
+      setViewingSubmission(null);
 
       try {
         // 1. Fetch Challenge Metadata (fast DB read, no S3) and check for a draft in parallel
@@ -325,10 +329,21 @@ export function Workspace() {
       setSubmitStatus(submission.status === 'COMPLETED'
         ? `Grading complete! Score: ${submission.score}`
         : `Grading failed: ${submission.status}`);
+      setSubmissionsRefreshKey((k) => k + 1); // New attempt just persisted server-side — refetch the history list.
     } catch (err) {
       console.error("Submission failed", err);
       setSubmitStatus('Submission failed');
       setIsSubmitting(false);
+    }
+  };
+
+  const handleViewSubmission = async (submissionId: string) => {
+    if (!challengeId) return;
+    try {
+      const detail = await fetchSubmissionDetail(challengeId, submissionId);
+      setViewingSubmission(detail);
+    } catch (err) {
+      console.error("Failed to load submission", err);
     }
   };
 
@@ -440,6 +455,7 @@ export function Workspace() {
   }
 
   const readmeContent = getFileContent('README.md', files);
+  const displayedFiles = viewingSubmission ? unflattenFiles(viewingSubmission.files) : files;
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background text-text-main">
@@ -537,6 +553,13 @@ export function Workspace() {
                 <BookOpen size={12} />
                 Problem
               </button>
+              <button
+                onClick={() => setActiveLeftTab('submissions')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'submissions' ? 'border-primary text-primary bg-background' : 'border-transparent text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'}`}
+              >
+                <History size={12} />
+                Submissions
+              </button>
               {gradingResult && (
                 <button
                   onClick={() => setActiveLeftTab('feedback')}
@@ -552,6 +575,14 @@ export function Workspace() {
               {activeLeftTab === 'problem' ? (
                 <div className="h-full overflow-y-auto p-4 prose dark:prose-invert prose-xs max-w-none scrollbar-thin selection:bg-primary/30">
                   <ReactMarkdown>{readmeContent || challengeMeta?.description || 'No description provided.'}</ReactMarkdown>
+                </div>
+              ) : activeLeftTab === 'submissions' ? (
+                <div className="h-full overflow-y-auto scrollbar-thin">
+                  <SubmissionsList
+                    challengeId={challengeId!}
+                    refreshKey={submissionsRefreshKey}
+                    onViewSubmission={handleViewSubmission}
+                  />
                 </div>
               ) : (
                 <div className="flex flex-col h-full min-h-0">
@@ -598,7 +629,7 @@ export function Workspace() {
                 </div>
                 <div className="flex-grow overflow-hidden">
                   <FileExplorer
-                    files={files || {}}
+                    files={displayedFiles || {}}
                     selectedFile={selectedFile}
                     onSelect={handleFileSelect}
                   />
@@ -617,6 +648,24 @@ export function Workspace() {
               >
                 {/* Editor Section */}
                 <div className="flex flex-col min-h-0 bg-background overflow-hidden">
+                  {viewingSubmission && (
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-primary/10 border-b border-border-main text-[11px] shrink-0">
+                      <span className="text-text-main">
+                        Viewing submission from{' '}
+                        <span className="font-medium">
+                          {new Date(viewingSubmission.submittedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                        </span>
+                        {' '}— read-only
+                      </span>
+                      <button
+                        onClick={() => setViewingSubmission(null)}
+                        className="flex items-center gap-1 px-2 py-1 rounded border border-border-main text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all font-bold uppercase text-[10px] shrink-0"
+                      >
+                        <X size={12} />
+                        Back to My Code
+                      </button>
+                    </div>
+                  )}
                   {/* Tab bar — VS Code style */}
                   <div className="flex bg-elevated border-b border-border-main shrink-0 overflow-x-auto">
                     {openFiles.length === 0 ? (
@@ -650,9 +699,10 @@ export function Workspace() {
                       height="100%"
                       theme={theme === 'light' ? 'vs' : 'vs-dark'}
                       path={selectedFile || ''}
-                      value={selectedFile ? getFileContent(selectedFile, files) : ''}
+                      value={selectedFile ? getFileContent(selectedFile, displayedFiles) : ''}
                       onChange={handleEditorChange}
                       options={{
+                        readOnly: !!viewingSubmission,
                         minimap: { enabled: false },
                         fontSize: 13,
                         padding: { top: 12 },

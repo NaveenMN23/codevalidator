@@ -1,5 +1,7 @@
 package com.interview.mainservice.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.mainservice.dto.RunResponse;
 import com.interview.mainservice.dto.SubmitRequest;
 import com.interview.mainservice.dto.TestCaseResult;
@@ -36,15 +38,18 @@ public class SubmitController {
     private final SubmissionRepository submissionRepository;
     private final SubmitService submitService;
     private final ExecutorService executionServiceExecutor;
+    private final ObjectMapper objectMapper;
 
     public SubmitController(ProblemRepository problemRepository,
                              SubmissionRepository submissionRepository,
                              SubmitService submitService,
-                             ExecutorService executionServiceExecutor) {
+                             ExecutorService executionServiceExecutor,
+                             ObjectMapper objectMapper) {
         this.problemRepository = problemRepository;
         this.submissionRepository = submissionRepository;
         this.submitService = submitService;
         this.executionServiceExecutor = executionServiceExecutor;
+        this.objectMapper = objectMapper;
     }
 
     @PostMapping("/{id}/submit")
@@ -62,7 +67,7 @@ public class SubmitController {
         executionServiceExecutor.submit(() -> {
             try {
                 RunResponse result = submitService.submit(userId, problemId, request);
-                Submission submission = saveSubmission(userId, problemId, result);
+                Submission submission = saveSubmission(userId, problemId, result, request.files());
                 deferredResult.setResult(ResponseEntity.ok(toResponse(submission, result.testResults())));
             } catch (ResponseStatusException e) {
                 deferredResult.setResult(ResponseEntity.status(e.getStatusCode()).build());
@@ -75,11 +80,16 @@ public class SubmitController {
         return deferredResult;
     }
 
-    private Submission saveSubmission(UUID userId, UUID problemId, RunResponse result) {
+    private Submission saveSubmission(UUID userId, UUID problemId, RunResponse result, Map<String, String> files) {
         Submission submission = new Submission(userId, problemId, "", Instant.now());
         submission.setStatus(result.success() ? "COMPLETED" : "FAILED");
         submission.setScore(result.success() ? 100.0 : 0.0);
         submission.setLogs(result.success() ? result.stdout() : result.stdout() + "\n" + result.stderr());
+        try {
+            submission.setFilesJson(objectMapper.writeValueAsString(files));
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize submitted files for problem {}: {}", problemId, e.getMessage());
+        }
         return submissionRepository.save(submission);
     }
 
