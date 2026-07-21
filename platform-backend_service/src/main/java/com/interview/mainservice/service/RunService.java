@@ -27,7 +27,7 @@ public class RunService {
 
         String language = problem.getLanguage() != null ? problem.getLanguage() : DEFAULT_LANGUAGE;
         String sessionId = SessionIdentifier.of(userId, problemId);
-        return executionService.execute(sessionId, problem.getEcrImageUri(), request.files(),
+        return executionService.execute(sessionId, problem.getEcrImageUri(), language, request.files(),
                 ExecutionService.resolveCommand(language));
     }
 

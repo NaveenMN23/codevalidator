@@ -1,4 +1,7 @@
 package com.interview.mainservice.dto;
 
-public record RunResponse(boolean success, String stdout, String stderr, int exitCode) {
+import java.util.List;
+
+public record RunResponse(boolean success, String stdout, String stderr, int exitCode,
+        List<TestCaseResult> testResults) {
 }

@@ -2,12 +2,14 @@ package com.interview.mainservice.controller;
 
 import com.interview.mainservice.dto.RunResponse;
 import com.interview.mainservice.dto.SubmitRequest;
+import com.interview.mainservice.dto.TestCaseResult;
 import com.interview.mainservice.model.Submission;
 import com.interview.mainservice.repository.ProblemRepository;
 import com.interview.mainservice.repository.SubmissionRepository;
 import com.interview.mainservice.service.SubmitService;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -61,7 +63,7 @@ public class SubmitController {
             try {
                 RunResponse result = submitService.submit(userId, problemId, request);
                 Submission submission = saveSubmission(userId, problemId, result);
-                deferredResult.setResult(ResponseEntity.ok(toResponse(submission)));
+                deferredResult.setResult(ResponseEntity.ok(toResponse(submission, result.testResults())));
             } catch (ResponseStatusException e) {
                 deferredResult.setResult(ResponseEntity.status(e.getStatusCode()).build());
             } catch (Exception e) {
@@ -81,12 +83,13 @@ public class SubmitController {
         return submissionRepository.save(submission);
     }
 
-    private Map<String, Object> toResponse(Submission submission) {
+    private Map<String, Object> toResponse(Submission submission, List<TestCaseResult> testResults) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", submission.getId().toString());
         body.put("status", submission.getStatus());
         body.put("score", submission.getScore());
         body.put("logs", submission.getLogs());
+        body.put("testResults", testResults);
         return body;
     }
 }

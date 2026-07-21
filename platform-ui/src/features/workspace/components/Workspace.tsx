@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import { TerminalComponent } from './Terminal';
 import { FileExplorer } from './FileExplorer';
 import { FeedbackDisplay } from './FeedbackDisplay';
+import { TestResultsList } from './TestResultsList';
 import {
   Play, Send, RefreshCcw, LayoutGrid, BookOpen,
   ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Terminal as TerminalIcon,
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
 import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge, openWorkspaceSession } from '../api';
-import type { GradingResult } from '../workspace.types';
+import type { GradingResult, TestCaseResult } from '../workspace.types';
 import './Workspace.css';
 
 // Plain in-memory file tree — same shape WebContainer's API used (kept for compatibility
@@ -50,6 +51,7 @@ export function Workspace() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const [gradingResult, setGradingResult] = useState<GradingResult | null>(null);
+  const [runTestResults, setRunTestResults] = useState<TestCaseResult[] | null>(null);
   const [challengeMeta, setChallengeMeta] = useState<any>(null);
   const [showExplorer, setShowExplorer] = useState(true);
   const [showExplorerPanel, setShowExplorerPanel] = useState(true);
@@ -176,11 +178,18 @@ export function Workspace() {
         // Fire-and-forget, only once the problem has actually loaded successfully — starts
         // the Fargate sandbox now so its ~30-60s cold start happens while the user reads the
         // problem, not when they click Run. A failed load above must never trigger this.
+        // Note: the backend accepts this with a 202 almost immediately and boots the
+        // container in the background, so its resolution does NOT mean the container is
+        // actually running yet — don't treat it as a readiness signal.
         openWorkspaceSession(challengeId).catch((err) =>
           console.warn('Failed to open workspace session (will spawn lazily on Run instead):', err)
         );
 
-        terminalInstanceRef.current?.write('\r\n\x1b[32m✔ Environment is ready! Click "Run Tests" to execute.\x1b[0m\r\n');
+        // Honest about what's actually true right now: the environment is still booting in
+        // the background (can take ~30-60s). Run Tests works either way — it just waits for
+        // the container if it's clicked before boot finishes — but claiming "ready" here was
+        // misleading and made an early Run look like it was hanging for no reason.
+        terminalInstanceRef.current?.write('\r\n\x1b[36m➤ Preparing your execution environment in the background — you can start coding now. "Run Tests" will wait for it if it\'s not ready yet.\x1b[0m\r\n');
       } catch (err) {
         console.error("Failed to boot IDE", err);
         setBootError(err instanceof Error ? err.message : 'Failed to load this challenge.');
@@ -238,6 +247,7 @@ export function Workspace() {
 
     persistDraftIfChanged(); // Fire-and-forget — Run already sends files directly, this just checkpoints the draft.
     setIsRunning(true);
+    setRunTestResults(null);
     if (terminal) {
       terminal.reset();
       terminal.write('\x1b[36m➤ Sending code to the Execution Service...\x1b[0m\r\n');
@@ -246,6 +256,7 @@ export function Workspace() {
       // Always runs server-side against the real Execution Service container — these are
       // Java/Maven challenges, which can't execute client-side in a browser.
       const result = await runChallenge(challengeId, flattenFiles(files));
+      setRunTestResults(result.testResults ?? null);
       terminal?.write(result.stdout.replace(/\n/g, '\r\n'));
       if (result.stderr) terminal?.write(result.stderr.replace(/\n/g, '\r\n'));
 
@@ -643,8 +654,15 @@ export function Workspace() {
                       <ChevronDown size={14} />
                     </button>
                   </div>
-                  <div className="flex-grow p-1.5 overflow-hidden">
-                    <TerminalComponent onTerminalReady={setTerminal} />
+                  <div className="flex-grow overflow-hidden flex flex-col min-h-0">
+                    {runTestResults && runTestResults.length > 0 && (
+                      <div className="shrink-0 max-h-[40%] overflow-y-auto border-b border-border-main p-2">
+                        <TestResultsList results={runTestResults} />
+                      </div>
+                    )}
+                    <div className="flex-grow p-1.5 overflow-hidden min-h-0">
+                      <TerminalComponent onTerminalReady={setTerminal} />
+                    </div>
                   </div>
                 </div>
               </Split>
