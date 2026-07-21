@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -19,10 +20,47 @@ type ExecuteRequest struct {
 }
 
 type ExecuteResponse struct {
-	Success  bool   `json:"success"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	ExitCode int    `json:"exit_code"`
+	Success     bool         `json:"success"`
+	Stdout      string       `json:"stdout"`
+	Stderr      string       `json:"stderr"`
+	ExitCode    int          `json:"exit_code"`
+	ReportFiles []ReportFile `json:"report_files,omitempty"`
+}
+
+type ReportFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+// Glob patterns (relative to appDir) checked for structured test reports after each run.
+// Extension point for future languages: add pytest's --junitxml path or jest-junit's output
+// path here — the parsing side (Java) already speaks JUnit XML and needs no other change.
+var junitReportGlobs = []string{
+	"target/surefire-reports/*.xml", // Java (Maven Surefire)
+}
+
+func collectReportFiles(appDir string) []ReportFile {
+	var reports []ReportFile
+	for _, pattern := range junitReportGlobs {
+		matches, err := filepath.Glob(filepath.Join(appDir, pattern))
+		if err != nil {
+			log.Printf("Failed to glob report pattern %s: %v", pattern, err)
+			continue
+		}
+		for _, match := range matches {
+			content, err := os.ReadFile(match)
+			if err != nil {
+				log.Printf("Failed to read report file %s: %v", match, err)
+				continue
+			}
+			relPath, err := filepath.Rel(appDir, match)
+			if err != nil {
+				relPath = match
+			}
+			reports = append(reports, ReportFile{Path: relPath, Content: string(content)})
+		}
+	}
+	return reports
 }
 
 func main() {
@@ -100,10 +138,11 @@ func main() {
 		}
 
 		resp := ExecuteResponse{
-			Success:  exitCode == 0,
-			Stdout:   stdout.String(),
-			Stderr:   stderr.String(),
-			ExitCode: exitCode,
+			Success:     exitCode == 0,
+			Stdout:      stdout.String(),
+			Stderr:      stderr.String(),
+			ExitCode:    exitCode,
+			ReportFiles: collectReportFiles(appDir),
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -114,7 +153,14 @@ func main() {
 
 	addr := fmt.Sprintf("0.0.0.0:%s", *port)
 	log.Printf("Starting sandbox-runner on %s...", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatalf("Server failed: %v", err)
+
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("sandbox-runner failed to bind %s: %v", addr, err)
+	}
+	log.Printf("sandbox-runner READY on %s — image loaded and accepting requests", addr)
+
+	if err := http.Serve(listener, nil); err != nil {
+		log.Fatalf("sandbox-runner crashed: %v", err)
 	}
 }

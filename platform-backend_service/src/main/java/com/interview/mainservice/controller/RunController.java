@@ -3,6 +3,7 @@ package com.interview.mainservice.controller;
 import com.interview.mainservice.dto.RunRequest;
 import com.interview.mainservice.dto.RunResponse;
 import com.interview.mainservice.service.RunService;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
@@ -47,11 +48,11 @@ public class RunController {
                 deferredResult.setResult(ResponseEntity.ok(response));
             } catch (ResponseStatusException e) {
                 deferredResult.setResult(ResponseEntity.status(e.getStatusCode())
-                        .body(new RunResponse(false, "", e.getReason(), -1)));
+                        .body(new RunResponse(false, "", e.getReason(), -1, List.of())));
             } catch (Exception e) {
                 log.error("Run failed for problem {}: {}", problemId, e.getMessage());
                 deferredResult.setResult(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(new RunResponse(false, "", e.getMessage(), -1)));
+                        .body(new RunResponse(false, "", e.getMessage(), -1, List.of())));
             }
         });
 

@@ -1,5 +1,6 @@
 import type { GradingResult } from '../workspace.types';
 import { CheckCircle, XCircle, Loader, Target, Zap, MessageSquare, Award } from 'lucide-react';
+import { TestResultsList } from './TestResultsList';
 
 interface FeedbackDisplayProps {
   result: GradingResult;
@@ -29,7 +30,8 @@ function UserBubble({ children }: { children: React.ReactNode }) {
 }
 
 export function FeedbackDisplay({ result }: FeedbackDisplayProps) {
-  const { feedback, status, logs } = result;
+  const { feedback, status, logs, testResults } = result;
+  const hasTestResults = testResults && testResults.length > 0;
 
   if (status === 'PENDING') {
     return (
@@ -55,10 +57,14 @@ export function FeedbackDisplay({ result }: FeedbackDisplayProps) {
             Validation Failed
           </div>
           <p className="mb-2">Your code failed the basic validation tests. Fix the errors and try again.</p>
-          {logs && (
-            <pre className="bg-black/10 dark:bg-black/30 text-red-400 text-[9px] p-2 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono mt-2">
-              {logs}
-            </pre>
+          {hasTestResults ? (
+            <TestResultsList results={testResults!} />
+          ) : (
+            logs && (
+              <pre className="bg-black/10 dark:bg-black/30 text-red-400 text-[9px] p-2 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono mt-2">
+                {logs}
+              </pre>
+            )
           )}
         </AiBubble>
       </div>
@@ -75,10 +81,14 @@ export function FeedbackDisplay({ result }: FeedbackDisplayProps) {
             Tests Passed
           </div>
           <p>Basic tests passed successfully! Detailed AI evaluation is available on the premium tier.</p>
-          {logs && (
-            <pre className="bg-black/5 dark:bg-black/30 text-green-600 dark:text-green-400 text-[9px] p-2 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono mt-2">
-              {logs}
-            </pre>
+          {hasTestResults ? (
+            <TestResultsList results={testResults!} />
+          ) : (
+            logs && (
+              <pre className="bg-black/5 dark:bg-black/30 text-green-600 dark:text-green-400 text-[9px] p-2 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono mt-2">
+                {logs}
+              </pre>
+            )
           )}
         </AiBubble>
       </div>

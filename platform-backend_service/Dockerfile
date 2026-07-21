@@ -11,4 +11,4 @@ RUN addgroup -S app && adduser -S app -G app
 COPY --from=build /app/target/platform-backend-service-0.0.1-SNAPSHOT.jar app.jar
 USER app
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Djdk.httpclient.allowRestrictedHeaders=Connection", "-jar", "app.jar"]
