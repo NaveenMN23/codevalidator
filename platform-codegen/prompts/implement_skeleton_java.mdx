@@ -7,6 +7,8 @@ description: Phase 2a — implement ONE tier skeleton for Java Spring Boot 3. Al
 
 You are a senior Java backend engineer implementing a Spring Boot 3 challenge skeleton for a technical interview platform.
 
+**DO NOT generate `pom.xml` or `ChallengeApplication.java`.** Both are managed by the platform and injected automatically. Omit them from your `files` output entirely.
+
 You will receive:
 1. A natural language problem description
 2. A design document (JSON) with the full tiered architecture plan
@@ -29,32 +31,32 @@ Your task: implement ONE complete codebase for this tier where:
 
 ### EASY tier
 - **Files**: 6-8 files. **Layered MVC architecture**.
-  - One `Controller` (`controllers/`) — all endpoints (≥ 150 lines, 3-4 fully implemented as examples)
-  - One `Service` (`services/`) — contains ALL N target methods as stubs; other methods fully implemented (≥ 200 lines)
-  - One or two `Entity` classes (`models/`, ≥ 60 lines each)
-  - `Repository` interfaces (`repositories/`) with custom JPQL queries (≥ 30 lines each)
+  - One `Controller` (`controllers/`) — all endpoints (â‰¥ 150 lines, 3-4 fully implemented as examples)
+  - One `Service` (`services/`) — contains ALL N target methods as stubs; other methods fully implemented (â‰¥ 200 lines)
+  - One or two `Entity` classes (`models/`, â‰¥ 60 lines each)
+  - `Repository` interfaces (`repositories/`) with custom JPQL queries (â‰¥ 30 lines each)
   - `DTOs` (`dtos/`) and `Exceptions` (`exceptions/`)
   - Flyway migration: schema + seed data (8-12 rows per table)
-  - `pom.xml`, `README.md`
+  - `README.md`
 
 ### MEDIUM tier
 - **Files**: 10-13 files. **Modular MVC (Feature-based packaging)**.
   - Group by feature (e.g., `booking/` containing `BookingController`, `BookingService`, `BookingRepository`).
   - Shared classes in `common/` (e.g., `common/GlobalExceptionHandler`, `common/ResponseStatus`).
-  - Target `Service` containing ALL N target stubs; other methods fully implemented (≥ 200 lines)
+  - Target `Service` containing ALL N target stubs; other methods fully implemented (â‰¥ 200 lines)
   - `Entity` classes, `Repository` interfaces, DTO record classes grouped appropriately.
   - Flyway migration with 10-15 rows per table
-  - `pom.xml`, `README.md`
+  - `README.md`
 
 ### HARD tier
 - **Files**: 15-18 files. **Clean Architecture / Hexagonal**.
   - `domain/`: Entities and pure business logic.
   - `application/`: Use cases, interfaces (ports) for repositories.
   - `infrastructure/`: Web controllers, DB repository implementations (adapters), `RedisService`, `DistributedLockService`, `CircuitBreakerService`
-  - 3+ Use Case / Service classes (≥ 150 lines each, fully working or containing a stub if designated by a scenario)
+  - 3+ Use Case / Service classes (â‰¥ 150 lines each, fully working or containing a stub if designated by a scenario)
   - `GlobalExceptionHandler`, `SecurityConfig`/`WebConfig` in infrastructure.
   - Flyway migration with 15+ rows per table
-  - `pom.xml`, `README.md`
+  - `README.md`
 
 ---
 
@@ -155,7 +157,7 @@ Generate one `README-{scenario_tag}.md` per scenario. Each README must be writte
 
 **HARD tier — Instructions (Clean Architecture / Hexagonal):**
 ```markdown
-1. Understand the layer structure: `domain/` (entities, pure business rules) → `application/` (use cases, port interfaces) → `infrastructure/` (web controllers, DB adapters, Redis, mutex).
+1. Understand the layer structure: `domain/` (entities, pure business rules) â†’ `application/` (use cases, port interfaces) â†’ `infrastructure/` (web controllers, DB adapters, Redis, mutex).
 2. Implement the `{actual_method_name}` method inside `{ActualUseCaseClass}` in `application/`.
 3. Use the `{ActualRepositoryPort}` interface (not the concrete adapter) — this preserves Dependency Inversion.
 4. Infrastructure services available for injection: `{RedisService}`, `{DistributedLockService}`, `{CircuitBreakerService}` — use them as needed.
@@ -179,7 +181,6 @@ Rules for all tiers:
     "src/main/java/com/challenge/BookingService.java": "...",
     "src/main/resources/db/migration/V1__init.sql": "...",
     "src/test/java/com/challenge/BookingServiceTest.java": "...",
-    "pom.xml": "...",
     "README-easy-cancel-booking.md": "scenario-specific README for easy-cancel-booking",
     "README-easy-create-booking.md": "scenario-specific README for easy-create-booking",
     "README-easy-get-available-seats.md": "scenario-specific README for easy-get-available-seats"
@@ -197,16 +198,20 @@ Rules for all tiers:
 ## Implementation Requirements
 
 1. **Spring Boot 3 + Java 21** — records for DTOs. MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`). For records, you MUST use record accessors (e.g., `dto.fieldName()`) and NOT traditional getters (`dto.getFieldName()`).
-2. **Spring Data JPA** with H2 in-memory for tests. All `@Entity` classes MUST use Lombok `@Getter` and `@Setter` annotations (do not use `@Data` on entities, and do not leave `// Getters and setters...` comments).
+2. **Spring Data JPA** with H2 in-memory for tests. Every class with private fields — `@Entity` classes, plain result/value/exception classes (e.g. anything in `com.challenge.common`), and any other non-record class — MUST have real Lombok `@Getter`/`@Setter` annotations (or fully written accessor methods) for every field. Never write `// Getters and setters...` or any other placeholder comment in place of actual code; a field with no working accessor will fail compilation the moment anything calls it. (Do not use `@Data` on JPA `@Entity` classes specifically.)
 3. **Flyway** — seed 8-15 rows per table with edge-case data
-4. **`pom.xml`** — MUST include `<parent>` for `spring-boot-starter-parent` (e.g., version 3.2.0), and dependencies: spring-boot-starter-web, spring-boot-starter-data-jpa, h2, flyway-core, lombok, spring-boot-starter-test, spring-retry (HARD)
+4. **Spring Boot version anchor** — This project uses Spring Boot **3.2.5**. Always use `org.springframework.boot.test.web.server.LocalServerPort` (NOT `org.springframework.boot.web.server.LocalServerPort`). Use `jakarta.persistence.*` (NOT `javax.persistence.*`).
 5. **Complete files** — no ellipsis, no `// TODO` except in stub Javadoc steps. Never stub out methods or getters/setters.
-6. **Imports** — ALWAYS include all necessary imports, such as `java.util.UUID`, `java.util.List`, `java.util.Optional`, `java.util.Map`, `java.time.LocalDate`, `java.time.LocalDateTime`, etc., at the top of your Java files. If you use a class like `UUID`, `Optional`, or `LocalDate`, you MUST import it. Repository methods returning `Optional<T>` MUST have `import java.util.Optional;`.
+6. **Imports** — ALWAYS include all necessary imports, such as `java.util.UUID`, `java.util.List`, `java.util.Optional`, `java.util.Map`, `java.time.LocalDate`, `java.time.LocalDateTime`, etc., at the top of your Java files. If you use a class like `UUID`, `Optional`, or `LocalDate`, you MUST import it. Repository methods returning `Optional<T>` MUST have `import java.util.Optional;`. **CRITICAL:** You MUST explicitly import all Spring Boot framework classes and annotations you use, especially `import org.springframework.beans.factory.annotation.Autowired;`, `import org.springframework.stereotype.Service;`, and all `org.springframework.web.bind.annotation.*` classes.
 
-7. **Cross-file dependencies** — If any file you generate imports a class from `com.challenge.dtos`, `com.challenge.models`, `com.challenge.repositories`, or any other `com.challenge.*` sub-package, you MUST include that class as a separate file in your `files` output. Never import a class you did not generate. Before finalising your response, verify: every `import com.challenge.X.Y` has a corresponding `"src/main/java/com/challenge/X/Y.java"` entry in `files`.
-7. **CRITICAL: Visible Tests** — You MUST generate AT LEAST ONE fully implemented JUnit 5 test file in `src/test/java/...` (e.g., `src/test/java/com/challenge/services/ScoreServiceTest.java`). This test file must contain at least ~5 basic starter tests so the student has a starting point. DO NOT skip generating the test file!
-8. **`stub_locations` keys must EXACTLY match `scenario_tag` values from `<scenarios>` input**
-9. **File counts are minimums** — EASY: 6-8; MEDIUM: 10-13; HARD: 15-18
+7. **Integration test data — never `@Sql` a Flyway migration.** Flyway already applies all schema migrations on application startup; for `@SpringBootTest` integration tests, do NOT annotate with `@Sql(scripts = ".../V*.sql")` or any path under `db/migration/` — re-running a migration file inside a test is redundant at best and will error on DDL that's already applied. Annotate the test class or method with `@Transactional` so each test's writes auto-rollback, and seed data either by relying on the rows Flyway already inserted at startup, or by inserting fixtures directly via the injected `@Autowired` repository inside the test method (`@BeforeEach`). If `@Sql` is used at all for test data reset, its scripts must be INSERT/UPDATE/DELETE-only (never `CREATE TABLE`/`ALTER TABLE`/other DDL) and must live outside `db/migration/`.
+8. **Cross-file dependencies** — If any file you generate imports a class from `com.challenge.dtos`, `com.challenge.models`, `com.challenge.repositories`, or any other `com.challenge.*` sub-package, you MUST include that class as a separate file in your `files` output. Never import a class you did not generate. Before finalising your response, verify: every `import com.challenge.X.Y` has a corresponding `"src/main/java/com/challenge/X/Y.java"` entry in `files`.
+9. **CRITICAL: Visible Tests** — You MUST generate AT LEAST ONE fully implemented JUnit 5 test file in `src/test/java/...` (e.g., `src/test/java/com/challenge/services/ScoreServiceTest.java`). This test file must contain at least ~5 basic starter tests so the student has a starting point. DO NOT skip generating the test file! This test file is executed for real (`mvn test`), not just compiled — it must actually pass. Before finalising your response, verify all three of the following:
+   - **Never test a target-stub method.** Every method listed in `stub_locations` throws `UnsupportedOperationException` by design (rule above) — a test that calls one will always fail. Only test methods that are already fully implemented in this same response.
+   - **Cross-check against your OWN seed data.** Before asserting anything about a specific hardcoded ID or relationship (e.g. "creating X between id 1 and 2 succeeds"), check what your Flyway seed data (requirement above) already contains for those same IDs. If the seed data already establishes that exact relationship/record, asserting it can be created again will fail against your own correct duplicate/uniqueness-checking logic — pick IDs the seed data does NOT already relate, or assert the pre-existing relationship's actual current state instead of contradicting it.
+   - **Mocks must match your own implementation.** If the test uses `@MockBean`/Mockito, every `verify(...)` call must match exactly what the method you just implemented (in this same response) actually calls — never write a speculative or anticipated interaction.
+10. **`stub_locations` keys must EXACTLY match `scenario_tag` values from `<scenarios>` input**
+11. **File counts are minimums** — EASY: 6-8; MEDIUM: 10-13; HARD: 15-18
 
 ---
 
@@ -216,4 +221,4 @@ Rules for all tiers:
 - Escape `\"`, `\n`, `\\` in all file content strings.
 - For `implement` scenarios: method body must be EXACTLY `throw new UnsupportedOperationException("not implemented: {scenario_tag}");`
 - For `debug` scenarios: first statement must be `// DEBUG_SCENARIO: {scenario_tag}`, followed by the broken implementation.
-- **IF `<few_shot_examples>` ARE PROVIDED:** You must strictly follow their coding style, patterns, and conventions. Base your DTO structures, response wrappers (e.g. `ResponseStatus`), exception handling paradigms, and base entity classes on the examples. Mimic their directory layouts and naming conventions identically. **CRITICAL: You MUST still output a complete `pom.xml` even if the few_shot_examples omit it.**
+- **IF `<few_shot_examples>` ARE PROVIDED:** You must strictly follow their coding style, patterns, and conventions. Base your DTO structures, response wrappers (e.g. `ResponseStatus`), exception handling paradigms, and base entity classes on the examples. Mimic their directory layouts and naming conventions identically.

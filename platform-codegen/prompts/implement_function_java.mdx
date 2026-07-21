@@ -32,7 +32,8 @@ Your task:
 - The implementation must be complete — no TODOs, no stubs, no ellipsis
 - Handle ALL error cases described in `<strip_description>`
 - Use the same patterns visible in other fully-implemented methods in the skeleton (`@Transactional`, exception classes, etc.)
-- Do NOT add new imports unless strictly required. If JPA imports are required, MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`).
+- `function_body` cannot change the file's import section — if your implementation needs a class that's already in `<skeleton_classes>` but not yet imported into `<stub_file_content>` (e.g. a DTO/model/util from another package), or a standard library type like `java.time.LocalDate`, list the required import statement(s) in the `imports` array. Do NOT avoid using the correct class, and do NOT inline a fully-qualified name instead — add it to `imports`. Leave `imports` empty (`[]`) if nothing new is needed. If JPA imports are required, MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`).
+- `function_body` also cannot add a new field to the class — if your implementation legitimately needs a repository/service dependency the stub class doesn't already declare, list a plain field declaration in the `fields` array (e.g. `"private ReservationRepository reservationRepository;"`) — no `@Autowired` annotation needed, it's added automatically. Do NOT avoid using a dependency you actually need just because it isn't declared yet. Leave `fields` empty (`[]`) if nothing new is needed.
 - **Java Records**: DTOs are Java Records. You MUST use record accessors (e.g., `dto.fieldName()`) and NOT traditional getters (`dto.getFieldName()`).
 
 ---
@@ -41,6 +42,7 @@ Your task:
 
 Use `@SpringBootTest(webEnvironment = RANDOM_PORT)` with `TestRestTemplate`.
 Use `@BeforeEach` to reset and seed the database to a known state.
+Do NOT use `@Sql` pointing at files under `db/migration/` to reset state — Flyway already runs those on startup and re-running them in a test is invalid. Rely on `@Transactional` for auto-rollback between tests, or seed via the injected repository in `@BeforeEach`.
 
 **MUST FAIL** against the stub (`throw new UnsupportedOperationException("not implemented: ...")`).
 **MUST PASS** against the correct gold master implementation.
@@ -84,11 +86,17 @@ Test ONLY the method for `<scenario_tag>`.
 {
   "function_body": "Booking booking = bookingRepository.findById(bookingId)\n    .orElseThrow(() -> new BookingNotFoundException(\"Booking not found\"));\nif (!booking.getUserId().equals(userId)) {\n    throw new ForbiddenException(\"Not your booking\");\n}\nbooking.getSeat().setIsBooked(false);\nbookingRepository.delete(booking);\nuserService.addLoyaltyPoints(userId, 10);",
   "test_hidden": "package com.challenge;\nimport org.junit.jupiter.api.Test;\nimport org.springframework.boot.test.context.SpringBootTest;\n...",
-  "test_visible": "package com.challenge.tests;\nimport org.junit.jupiter.api.Test;\nimport static org.junit.jupiter.api.Assertions.*;\n...\npublic class CancelBookingVisibleTest {\n    @Test void testCancelBookingRemovesBooking() { ... }\n}"
+  "test_visible": "package com.challenge.tests;\nimport org.junit.jupiter.api.Test;\nimport static org.junit.jupiter.api.Assertions.*;\n...\npublic class CancelBookingVisibleTest {\n    @Test void testCancelBookingRemovesBooking() { ... }\n}",
+  "imports": [],
+  "fields": []
 }
 ```
 
 `function_body` contains ONLY the statements inside the method body — NOT the method signature, NOT annotations, NOT the closing `}`.
+
+`imports` — list any `import ...;` statements `function_body` needs that aren't already in `<stub_file_content>` (e.g. `["import java.time.LocalDate;"]`). Leave `[]` if none are needed. This is the ONLY way to add an import — `function_body` itself only replaces the method body, never the file's import section.
+
+`fields` — list any repository/service field declarations `function_body` needs that aren't already declared in the class (e.g. `["private ReservationRepository reservationRepository;"]`, no `@Autowired` needed). Leave `[]` if none are needed. This is the ONLY way to add a field — `function_body` itself only replaces the method body, never the class's field declarations.
 
 **test_visible** — Write 1–3 JUnit 5 tests covering the core happy-path behaviour from `<scenario_description>`. These tests will be visible to the user in the editor. Rules:
 - Must fail when the method throws `UnsupportedOperationException` (stub state)

@@ -99,11 +99,22 @@ public class DockerImageService {
             Files.writeString(tmpDir.resolve("Dockerfile"), DockerfileTemplates.build(language, depFile != null));
 
             log.info("Building Docker image {} from scaffold {}", localTag, s3Key);
-            runCommand(tmpDir, "docker", "build", "-t", localTag, ".");
+            // Pin the target platform explicitly — AWS Fargate's default runtime is
+            // linux/x86_64. Without this, `docker build` defaults to whatever
+            // architecture the build machine itself runs (e.g. ARM64 on Apple Silicon),
+            // producing an image Fargate can't execute at all: the container exits
+            // immediately ("Essential container in task exited") since the entrypoint
+            // binary is the wrong machine code for the runtime CPU.
+            runCommand(tmpDir, "docker", "build", "--pull", "--platform", "linux/amd64", "-t", localTag, ".");
             log.info("Docker image {} built successfully", localTag);
 
             log.info("Validating Docker image {} — checking sandbox-runner health", localTag);
-            runCommand(null, "docker", "run", "--rm", localTag, "/bin/sh", "-c",
+            // Match the build platform here too — on an ARM64 build host this now runs
+            // the amd64 image under emulation, which is exactly what we want to validate
+            // (the previous, unpinned version passed this same check while emulating
+            // nothing, silently hiding the architecture mismatch that only surfaced once
+            // deployed to Fargate's real x86_64 hardware).
+            runCommand(null, "docker", "run", "--rm", "--platform", "linux/amd64", localTag, "/bin/sh", "-c",
                     "/usr/local/bin/sandbox-runner --port 8080 & sleep 4 && wget -qO- http://localhost:8080/health");
             log.info("Docker image {} passed sandbox-runner health check", localTag);
 
@@ -125,7 +136,9 @@ public class DockerImageService {
             runCommand(null, "docker", "push", ecrTag);
             log.info("Pushed {} to ECR", ecrTag);
 
+            final String finalEcrTag = ecrTag;
             problemRepository.findBySlug(slug).ifPresent(p -> {
+                p.setEcrImageUri(finalEcrTag);
                 p.setPublished(true);
                 problemRepository.save(p);
                 log.info("Published problem '{}' after successful image build", slug);
@@ -181,6 +194,7 @@ public class DockerImageService {
 
     private void runCommand(Path workDir, String... cmd) throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
+        pb.environment().put("DOCKER_BUILDKIT", "1");
         if (workDir != null) pb.directory(workDir.toFile());
         Process proc = pb.start();
         String output = new String(proc.getInputStream().readAllBytes());

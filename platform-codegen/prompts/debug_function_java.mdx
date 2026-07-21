@@ -30,7 +30,8 @@ You will receive:
 - The fix must address exactly what `<bug_description>` describes — do not introduce unrelated changes
 - The correct implementation must be complete — no TODOs, no stubs, no ellipsis
 - Use the same patterns visible in other fully-implemented methods (`@Transactional`, exception classes, repository calls, etc.)
-- Do NOT add new imports unless strictly required. If JPA imports are required, MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`).
+- `function_body` cannot change the file's import section — if the correct fix needs a class that's already in `<skeleton_classes>` but not yet imported into `<stub_file_content>` (e.g. a DTO/model/util from another package), or a standard library type like `java.time.LocalDate`, list the required import statement(s) in the `imports` array. Do NOT avoid using the correct class, and do NOT inline a fully-qualified name instead — add it to `imports`. Leave `imports` empty (`[]`) if nothing new is needed. If JPA imports are required, MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`).
+- `function_body` also cannot add a new field to the class — if the correct fix legitimately needs a repository/service dependency the stub class doesn't already declare, list a plain field declaration in the `fields` array (e.g. `"private ReservationRepository reservationRepository;"`) — no `@Autowired` annotation needed, it's added automatically. Leave `fields` empty (`[]`) if nothing new is needed.
 
 ---
 
@@ -38,6 +39,7 @@ You will receive:
 
 Use `@SpringBootTest(webEnvironment = RANDOM_PORT)` with `TestRestTemplate`.
 Use `@BeforeEach` to reset and seed the database to a known state.
+Do NOT use `@Sql` pointing at files under `db/migration/` to reset state — Flyway already runs those on startup and re-running them in a test is invalid. Rely on `@Transactional` for auto-rollback between tests, or seed via the injected repository in `@BeforeEach`.
 
 **MUST FAIL** against `bug_code` (the broken version — the bug causes observable wrong behaviour).
 **MUST PASS** against `function_body` (the correct fix).
@@ -84,7 +86,9 @@ The tests must exercise the specific buggy behaviour described in `<bug_descript
   "function_body": "Booking booking = bookingRepository.findById(bookingId)\n    .orElseThrow(() -> new BookingNotFoundException(\"Booking not found\"));\nif (!booking.getUserId().equals(userId)) {\n    throw new ForbiddenException(\"Not your booking\");\n}\nSeat seat = booking.getSeat();\nseat.setIsBooked(false);\nseatRepository.save(seat);\nbookingRepository.delete(booking);\nuserService.addLoyaltyPoints(userId, 10);",
   "bug_code": "// DEBUG_SCENARIO: medium-seat-status-bug\nBooking booking = bookingRepository.findById(bookingId)\n    .orElseThrow(() -> new BookingNotFoundException(\"Booking not found\"));\nbookingRepository.delete(booking);\n// BUG: seat.setIsBooked(false) and seatRepository.save(seat) are missing — intentionally broken",
   "test_hidden": "package com.challenge;\nimport org.junit.jupiter.api.Test;\nimport org.springframework.boot.test.context.SpringBootTest;\n...",
-  "test_visible": "package com.challenge.tests;\nimport org.junit.jupiter.api.Test;\nimport static org.junit.jupiter.api.Assertions.*;\n...\npublic class SeatStatusVisibleTest {\n    @Test void testCancelBookingUpdatesSeats() { ... }\n}"
+  "test_visible": "package com.challenge.tests;\nimport org.junit.jupiter.api.Test;\nimport static org.junit.jupiter.api.Assertions.*;\n...\npublic class SeatStatusVisibleTest {\n    @Test void testCancelBookingUpdatesSeats() { ... }\n}",
+  "imports": [],
+  "fields": []
 }
 ```
 
@@ -92,6 +96,8 @@ The tests must exercise the specific buggy behaviour described in `<bug_descript
 - `bug_code` — statements inside the broken method verbatim (including the `// DEBUG_SCENARIO:` first line), no signature, no closing `}`
 - `test_hidden` — complete JUnit 5 test file
 - `test_visible` — 1–3 JUnit 5 tests visible to the user; must fail against `bug_code` and pass against `function_body`; class name `{ScenarioTitle}VisibleTest`, package `com.challenge.tests`
+- `imports` — list any `import ...;` statements the fixed `function_body` needs that aren't already in `<stub_file_content>` (e.g. `["import java.time.LocalDate;"]`). Leave `[]` if none are needed. This is the ONLY way to add an import — `function_body` itself only replaces the method body, never the file's import section.
+- `fields` — list any repository/service field declarations the fixed `function_body` needs that aren't already declared in the class (e.g. `["private ReservationRepository reservationRepository;"]`, no `@Autowired` needed). Leave `[]` if none are needed. This is the ONLY way to add a field — `function_body` itself only replaces the method body, never the class's field declarations.
 
 ---
 

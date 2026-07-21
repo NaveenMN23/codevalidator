@@ -45,6 +45,12 @@ public class Problem {
     @Column
     private String tier;
 
+    @Column(name = "ecr_image_uri")
+    private String ecrImageUri;
+
+    @Column(name = "hidden_test_key")
+    private String hiddenTestKey;
+
     @Column(name = "is_published", nullable = false)
     private boolean isPublished = false;
 
@@ -92,6 +98,17 @@ public class Problem {
     public String getDifficulty() { return difficulty; }
     public String getProblemLink() { return problemLink; }
     public List<String> getTags() { return tags; }
+    public String getEcrImageUri() {
+        return ecrImageUri;
+    }
+
+    public void setEcrImageUri(String ecrImageUri) {
+        this.ecrImageUri = ecrImageUri;
+    }
+
+    public String getHiddenTestKey() { return hiddenTestKey; }
+    public void setHiddenTestKey(String hiddenTestKey) { this.hiddenTestKey = hiddenTestKey; }
+
     public boolean isPublished() { return isPublished; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

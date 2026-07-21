@@ -65,6 +65,8 @@ order:
      code and no direct database write path** — confirmed by searching its source. Whatever
      produced the test images used in this investigation was not this service. The requirements
      below describe the target contract for whatever does end up building these images.
+     *(Update: this ended up being `admin-backend`'s `DockerImageService`, not `platform-codegen`
+     — see §4.)*
 
 ---
 
@@ -98,10 +100,12 @@ expects:
   - Response: `{"success": bool, "stdout": string, "stderr": string, "exit_code": int}`
 - **`GET /health`** — returns `200` once ready to accept traffic.
 
-A minimal reference implementation of this exact contract exists today at
-`platform-execution_service/executors/sandbox_server.py` (50 lines, FastAPI). Codegen's build
-process doesn't have to reuse that file or folder — only the HTTP contract above needs to hold,
-in whatever language/framework is convenient for whatever builds these images.
+A working implementation of this exact contract now exists at
+`admin-backend/src/main/resources/sandbox-runner/main.go` (a small Go HTTP server, not the
+Python/FastAPI `platform-execution_service/executors/sandbox_server.py` this section originally
+pointed to — that path doesn't exist in this repo). It's compiled to a binary at
+`admin-backend`'s Docker build time (`admin-backend/Dockerfile`'s `go-build` stage) and baked
+into every problem image by `DockerfileTemplates`, set as each image's `CMD`.
 
 **Whatever implements this must be set as the image's `CMD` (or `ENTRYPOINT`) explicitly.** If the
 main process ever exits — crashes, finishes a one-shot task, or falls back to a base image's
@@ -140,14 +144,20 @@ idles after its first job" behavior to rely on; the listener has to *be* the mai
 
 ---
 
-## 4. Open Decisions (not resolved by this investigation, need a call)
+## 4. Open Decisions — resolved
 
-1. **ECR repository layout**: one shared repo with per-problem tags (what's been pushed manually
-   so far) vs. one ECR repository per problem (what this platform's README currently documents).
-   Both work with the current backend code — `ecr_image_uri` is read as an opaque string either
-   way. Pick one deliberately; affects lifecycle-policy and permission scoping later.
-2. **Multi-language run commands**: `RunService`/`SubmitService` currently hardcode the Java/Maven
-   test command regardless of `problem.getLanguage()`. If codegen is expected to build non-Java
-   images, the backend needs a way to know which command to run per problem — not yet decided
-   whether that's a new DB column, a per-language lookup table in the backend, or something else.
-   Flagging now so it's not discovered only after non-Java images already exist.
+1. **ECR repository layout**: resolved as one shared repo with per-problem tags.
+   `admin-backend`'s `DockerImageService.buildAndPush()` tags each image as
+   `${ECR_REPOSITORY_URI}:${slug}` and pushes to that single configured repository — matching
+   what had already been pushed manually, not the per-problem-repo layout the README used to
+   describe (README has been corrected).
+2. **Multi-language run commands**: resolved. `ExecutionService.LANGUAGE_COMMANDS` is a static
+   `Map.of("java", "mvn -o test ...", "node", "npm test", "python", "pytest")` keyed by
+   `problem.getLanguage()`, used by both `RunService` and `SubmitService` via
+   `ExecutionService.resolveCommand(language)`. No DB column was needed. `DockerImageService`/
+   `DockerfileTemplates` build matching images for all three languages today.
+
+Also confirmed resolved: the reference `sandbox_server.py` this document describes is implemented
+(not as Python/FastAPI, but as an equivalent Go binary,
+`admin-backend/src/main/resources/sandbox-runner/main.go`, compiled at image-build time and set
+as each challenge image's `CMD`) and satisfies the `/execute` + `/health` contract in §2 exactly.

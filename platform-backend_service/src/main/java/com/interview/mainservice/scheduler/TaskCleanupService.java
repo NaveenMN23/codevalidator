@@ -32,9 +32,10 @@ public class TaskCleanupService {
     @Scheduled(fixedDelay = 120_000)
     public void stopOrphanedTasks() {
         if (clusterArn == null || clusterArn.isBlank()) {
-            log.debug("ECS_CLUSTER_ARN not configured — skipping orphan cleanup");
+            log.warn("Skipping orphaned ECS task cleanup: app.aws.ecs.cluster-arn is not configured");
             return;
         }
+
         Set<String> activeTaskArns = sessionRepository.getActiveTaskArns();
 
         String nextToken = null;

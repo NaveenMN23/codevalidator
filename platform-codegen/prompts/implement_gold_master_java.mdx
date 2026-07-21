@@ -140,6 +140,7 @@ Already-correct classes and methods.
 
 One JUnit 5 test file per scenario (keyed by scenario_tag):
 - `@SpringBootTest(webEnvironment = RANDOM_PORT)` with `TestRestTemplate`
+- Never use `@Sql` against files under `db/migration/` to reset test data (Flyway already ran them at startup); use `@Transactional` for auto-rollback and seed via the repository in `@BeforeEach` if a scenario needs specific rows beyond what Flyway seeded.
 - Each file tests ONLY its scenario's stripped method
 - MUST FAIL on scaffold, PASS on gold master
 - Include Layer 1 (happy path) + scenario-specific assertions
@@ -149,11 +150,11 @@ One JUnit 5 test file per scenario (keyed by scenario_tag):
 ## Implementation Requirements
 
 1. **Spring Boot 3 + Java 21** — records for DTOs. MUST use `jakarta.persistence.*` (NOT `javax.persistence.*`).
-2. **Spring Data JPA** with H2 in-memory for tests. All `@Entity` classes MUST use Lombok `@Getter` and `@Setter` annotations (do not use `@Data` on entities, and do not leave `// Getters and setters...` comments).
+2. **Spring Data JPA** with H2 in-memory for tests. Every class with private fields — `@Entity` classes, plain result/value/exception classes (e.g. anything in `com.challenge.common`), and any other non-record class — MUST have real Lombok `@Getter`/`@Setter` annotations (or fully written accessor methods) for every field. Never write `// Getters and setters...` or any other placeholder comment in place of actual code; a field with no working accessor will fail compilation the moment anything calls it. (Do not use `@Data` on JPA `@Entity` classes specifically.)
 3. **Flyway** — seed 8-15 rows per table with edge-case data
 4. **`pom.xml`** — MUST include `<parent>` for `spring-boot-starter-parent` (e.g., version 3.2.0), and dependencies: spring-boot-starter-web, spring-boot-starter-data-jpa, h2, flyway-core, lombok, spring-boot-starter-test, spring-retry (for HARD)
 5. **Complete files** — no ellipsis, no `// TODO` except inside strip blocks. Never stub out methods or getters/setters.
-6. **Imports** — ALWAYS include all necessary imports, such as `java.util.UUID`, `java.util.List`, `java.util.Optional`, `java.util.Map`, `java.time.LocalDate`, `java.time.LocalDateTime`, etc., at the top of your Java files. If you use a class like `UUID`, `Optional`, or `LocalDate`, you MUST import it. Repository methods returning `Optional<T>` MUST have `import java.util.Optional;`.
+6. **Imports** — ALWAYS include all necessary imports, such as `java.util.UUID`, `java.util.List`, `java.util.Optional`, `java.util.Map`, `java.time.LocalDate`, `java.time.LocalDateTime`, etc., at the top of your Java files. If you use a class like `UUID`, `Optional`, or `LocalDate`, you MUST import it. Repository methods returning `Optional<T>` MUST have `import java.util.Optional;`. **CRITICAL:** You MUST explicitly import all Spring Boot framework classes and annotations you use, especially `import org.springframework.beans.factory.annotation.Autowired;`, `import org.springframework.stereotype.Service;`, and all `org.springframework.web.bind.annotation.*` classes.
 7. **Working gold master** — compiles and all tests pass with strip blocks included
 8. **File counts are minimums** — EASY: 6-8; MEDIUM: 10-13; HARD: 15-18
 9. **Line counts are minimums** — stub files are not acceptable
