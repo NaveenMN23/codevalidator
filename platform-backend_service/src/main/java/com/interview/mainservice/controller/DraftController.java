@@ -39,6 +39,7 @@ public class DraftController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("files", draft.get().files());
         response.put("pendingTime", draft.get().pendingTime());
+        response.put("updatedAt", draft.get().updatedAt().toString());
         return ResponseEntity.ok(response);
     }
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.mainservice.model.Draft;
 import com.interview.mainservice.repository.DraftRepository;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,7 +25,7 @@ public class DraftService {
         this.objectMapper = objectMapper;
     }
 
-    public record DraftData(Map<String, String> files, Integer pendingTime) {
+    public record DraftData(Map<String, String> files, Integer pendingTime, Instant updatedAt) {
     }
 
     public Optional<DraftData> getDraft(UUID userId, UUID problemId) {
@@ -34,7 +35,7 @@ public class DraftService {
                     try {
                         Map<String, String> files = objectMapper.readValue(
                                 draft.getFilesJson(), new TypeReference<Map<String, String>>() {});
-                        return new DraftData(files, draft.getPendingTime());
+                        return new DraftData(files, draft.getPendingTime(), draft.getUpdatedAt());
                     } catch (JsonProcessingException e) {
                         return null;
                     }

@@ -34,6 +34,9 @@ public class Submission {
     @Column(columnDefinition = "TEXT")
     private String logs;
 
+    @Column(name = "files_json", columnDefinition = "TEXT")
+    private String filesJson;
+
     @Column(name = "submitted_at", nullable = false)
     private Instant submittedAt;
 
@@ -96,6 +99,14 @@ public class Submission {
 
     public void setLogs(String logs) {
         this.logs = logs;
+    }
+
+    public String getFilesJson() {
+        return filesJson;
+    }
+
+    public void setFilesJson(String filesJson) {
+        this.filesJson = filesJson;
     }
 
     public Instant getSubmittedAt() {

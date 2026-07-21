@@ -7,14 +7,17 @@ import { TerminalComponent } from './Terminal';
 import { FileExplorer } from './FileExplorer';
 import { FeedbackDisplay } from './FeedbackDisplay';
 import { TestResultsList } from './TestResultsList';
+import { DraftResumeDialog } from './DraftResumeDialog';
+import { SubmissionsList } from './SubmissionsList';
 import {
   Play, Send, RefreshCcw, LayoutGrid, BookOpen,
   ArrowLeft, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Terminal as TerminalIcon,
-  RotateCcw, Sparkles, Sun, Moon, AlertTriangle
+  RotateCcw, Sparkles, Sun, Moon, AlertTriangle, History, X
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
-import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge, openWorkspaceSession } from '../api';
-import type { GradingResult, TestCaseResult } from '../workspace.types';
+import { fetchChallenge, fetchChallengeFiles, fetchDraft, saveDraft, submitChallenge, deleteDraft, runChallenge, openWorkspaceSession, fetchSubmissionDetail } from '../api';
+import type { DraftData } from '../api';
+import type { GradingResult, TestCaseResult, SubmissionDetail } from '../workspace.types';
 import './Workspace.css';
 
 // Plain in-memory file tree — same shape WebContainer's API used (kept for compatibility
@@ -47,6 +50,7 @@ export function Workspace() {
   const [isBooting, setIsBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootRetryKey, setBootRetryKey] = useState(0);
+  const [pendingDraft, setPendingDraft] = useState<DraftData | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
@@ -56,7 +60,9 @@ export function Workspace() {
   const [showExplorer, setShowExplorer] = useState(true);
   const [showExplorerPanel, setShowExplorerPanel] = useState(true);
   const [showTerminal, setShowTerminal] = useState(true);
-  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'feedback'>('problem');
+  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'feedback' | 'submissions'>('problem');
+  const [viewingSubmission, setViewingSubmission] = useState<SubmissionDetail | null>(null);
+  const [submissionsRefreshKey, setSubmissionsRefreshKey] = useState(0);
   const [timeLeft, setTimeLeft] = useState(3600); // 60 minutes default
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -128,12 +134,37 @@ export function Workspace() {
   };
 
   // Initialize Workspace
+  const loadBoilerplate = async (cid: string): Promise<FileTree> => {
+    console.log("No draft found, loading boilerplate...");
+    const challengeFiles = await fetchChallengeFiles(cid);
+    if (Object.keys(challengeFiles).length > 0) {
+      return unflattenFiles(challengeFiles);
+    }
+    // Fallback boilerplate
+    return {
+      'index.js': { file: { contents: '// Start coding here\n' } },
+      'package.json': { file: { contents: JSON.stringify({ name: "challenge", type: "module" }, null, 2) } }
+    };
+  };
+
+  const finalizeFiles = (initialFiles: FileTree) => {
+    lastSavedHashRef.current = hashFiles(flattenFiles(initialFiles));
+    setFiles(initialFiles);
+    setIsBooting(false);
+
+    if (initialFiles['README.md']) setSelectedFile('README.md');
+    else if (initialFiles['index.ts']) setSelectedFile('index.ts');
+    else if (initialFiles['index.js']) setSelectedFile('index.js');
+  };
+
   useEffect(() => {
     async function init() {
       if (!challengeId || !user) return;
 
       setBootError(null);
       setIsBooting(true);
+      setPendingDraft(null);
+      setViewingSubmission(null);
 
       try {
         // 1. Fetch Challenge Metadata (fast DB read, no S3) and check for a draft in parallel
@@ -143,41 +174,10 @@ export function Workspace() {
         ]);
         setChallengeMeta(meta);
 
-        let initialFiles: FileTree | null = null;
-
-        // 2. If draft exists, unflatten it — never touches S3
-        if (draftData) {
-          initialFiles = unflattenFiles(draftData.files);
-          setTimeLeft(draftData.pendingTime ?? 3600);
-        }
-
-        // 3. If no draft, fetch boilerplate from the challenge's files (S3) — only paid
-        // for first-time visits, since a saved draft skips this entirely.
-        if (!initialFiles) {
-          console.log("No draft found, loading boilerplate...");
-          const challengeFiles = await fetchChallengeFiles(challengeId);
-          if (Object.keys(challengeFiles).length > 0) {
-            initialFiles = unflattenFiles(challengeFiles);
-          } else {
-            // Fallback boilerplate
-            initialFiles = {
-              'index.js': { file: { contents: '// Start coding here\n' } },
-              'package.json': { file: { contents: JSON.stringify({ name: "challenge", type: "module" }, null, 2) } }
-            };
-          }
-        }
-
-        lastSavedHashRef.current = hashFiles(flattenFiles(initialFiles));
-        setFiles(initialFiles as FileTree);
-        setIsBooting(false);
-
-        if (initialFiles['README.md']) setSelectedFile('README.md');
-        else if (initialFiles['index.ts']) setSelectedFile('index.ts');
-        else if (initialFiles['index.js']) setSelectedFile('index.js');
-
-        // Fire-and-forget, only once the problem has actually loaded successfully — starts
-        // the Fargate sandbox now so its ~30-60s cold start happens while the user reads the
-        // problem, not when they click Run. A failed load above must never trigger this.
+        // Fire-and-forget, started as soon as the challenge is known valid — starts the
+        // Fargate sandbox now so its ~30-60s cold start happens while the user reads the
+        // problem or decides whether to resume a draft, not when they click Run. A failed
+        // load above must never trigger this.
         // Note: the backend accepts this with a 202 almost immediately and boots the
         // container in the background, so its resolution does NOT mean the container is
         // actually running yet — don't treat it as a readiness signal.
@@ -190,6 +190,17 @@ export function Workspace() {
         // the container if it's clicked before boot finishes — but claiming "ready" here was
         // misleading and made an early Run look like it was hanging for no reason.
         terminalInstanceRef.current?.write('\r\n\x1b[36m➤ Preparing your execution environment in the background — you can start coding now. "Run Tests" will wait for it if it\'s not ready yet.\x1b[0m\r\n');
+
+        // 2. If a draft exists, let the user choose to continue or start over instead of
+        // silently loading it — stop here and render the choice dialog.
+        if (draftData) {
+          setPendingDraft(draftData);
+          setIsBooting(false);
+          return;
+        }
+
+        // 3. No draft — go straight to boilerplate.
+        finalizeFiles(await loadBoilerplate(challengeId));
       } catch (err) {
         console.error("Failed to boot IDE", err);
         setBootError(err instanceof Error ? err.message : 'Failed to load this challenge.');
@@ -198,6 +209,27 @@ export function Workspace() {
     }
     init();
   }, [challengeId, user, bootRetryKey]);
+
+  const handleContinueDraft = () => {
+    if (!pendingDraft) return;
+    finalizeFiles(unflattenFiles(pendingDraft.files));
+    setTimeLeft(pendingDraft.pendingTime ?? 3600);
+    setPendingDraft(null);
+  };
+
+  const handleStartOver = async () => {
+    if (!challengeId || !user) return;
+    setPendingDraft(null);
+    setIsBooting(true);
+    try {
+      await deleteDraft(challengeId, user.id);
+      finalizeFiles(await loadBoilerplate(challengeId));
+    } catch (err) {
+      console.error("Failed to start over", err);
+      setBootError(err instanceof Error ? err.message : 'Failed to reset this challenge.');
+      setIsBooting(false);
+    }
+  };
 
   // Handle terminal readiness
   useEffect(() => {
@@ -297,10 +329,21 @@ export function Workspace() {
       setSubmitStatus(submission.status === 'COMPLETED'
         ? `Grading complete! Score: ${submission.score}`
         : `Grading failed: ${submission.status}`);
+      setSubmissionsRefreshKey((k) => k + 1); // New attempt just persisted server-side — refetch the history list.
     } catch (err) {
       console.error("Submission failed", err);
       setSubmitStatus('Submission failed');
       setIsSubmitting(false);
+    }
+  };
+
+  const handleViewSubmission = async (submissionId: string) => {
+    if (!challengeId) return;
+    try {
+      const detail = await fetchSubmissionDetail(challengeId, submissionId);
+      setViewingSubmission(detail);
+    } catch (err) {
+      console.error("Failed to load submission", err);
     }
   };
 
@@ -390,6 +433,16 @@ export function Workspace() {
     );
   }
 
+  if (pendingDraft) {
+    return (
+      <DraftResumeDialog
+        updatedAt={pendingDraft.updatedAt}
+        onContinue={handleContinueDraft}
+        onStartOver={handleStartOver}
+      />
+    );
+  }
+
   if (isBooting) {
     return (
       <div className="flex h-full items-center justify-center bg-white">
@@ -402,6 +455,7 @@ export function Workspace() {
   }
 
   const readmeContent = getFileContent('README.md', files);
+  const displayedFiles = viewingSubmission ? unflattenFiles(viewingSubmission.files) : files;
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background text-text-main">
@@ -499,6 +553,13 @@ export function Workspace() {
                 <BookOpen size={12} />
                 Problem
               </button>
+              <button
+                onClick={() => setActiveLeftTab('submissions')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b ${activeLeftTab === 'submissions' ? 'border-primary text-primary bg-background' : 'border-transparent text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'}`}
+              >
+                <History size={12} />
+                Submissions
+              </button>
               {gradingResult && (
                 <button
                   onClick={() => setActiveLeftTab('feedback')}
@@ -514,6 +575,14 @@ export function Workspace() {
               {activeLeftTab === 'problem' ? (
                 <div className="h-full overflow-y-auto p-4 prose dark:prose-invert prose-xs max-w-none scrollbar-thin selection:bg-primary/30">
                   <ReactMarkdown>{readmeContent || challengeMeta?.description || 'No description provided.'}</ReactMarkdown>
+                </div>
+              ) : activeLeftTab === 'submissions' ? (
+                <div className="h-full overflow-y-auto scrollbar-thin">
+                  <SubmissionsList
+                    challengeId={challengeId!}
+                    refreshKey={submissionsRefreshKey}
+                    onViewSubmission={handleViewSubmission}
+                  />
                 </div>
               ) : (
                 <div className="flex flex-col h-full min-h-0">
@@ -560,7 +629,7 @@ export function Workspace() {
                 </div>
                 <div className="flex-grow overflow-hidden">
                   <FileExplorer
-                    files={files || {}}
+                    files={displayedFiles || {}}
                     selectedFile={selectedFile}
                     onSelect={handleFileSelect}
                   />
@@ -579,6 +648,24 @@ export function Workspace() {
               >
                 {/* Editor Section */}
                 <div className="flex flex-col min-h-0 bg-background overflow-hidden">
+                  {viewingSubmission && (
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-primary/10 border-b border-border-main text-[11px] shrink-0">
+                      <span className="text-text-main">
+                        Viewing submission from{' '}
+                        <span className="font-medium">
+                          {new Date(viewingSubmission.submittedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                        </span>
+                        {' '}— read-only
+                      </span>
+                      <button
+                        onClick={() => setViewingSubmission(null)}
+                        className="flex items-center gap-1 px-2 py-1 rounded border border-border-main text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all font-bold uppercase text-[10px] shrink-0"
+                      >
+                        <X size={12} />
+                        Back to My Code
+                      </button>
+                    </div>
+                  )}
                   {/* Tab bar — VS Code style */}
                   <div className="flex bg-elevated border-b border-border-main shrink-0 overflow-x-auto">
                     {openFiles.length === 0 ? (
@@ -612,9 +699,10 @@ export function Workspace() {
                       height="100%"
                       theme={theme === 'light' ? 'vs' : 'vs-dark'}
                       path={selectedFile || ''}
-                      value={selectedFile ? getFileContent(selectedFile, files) : ''}
+                      value={selectedFile ? getFileContent(selectedFile, displayedFiles) : ''}
                       onChange={handleEditorChange}
                       options={{
+                        readOnly: !!viewingSubmission,
                         minimap: { enabled: false },
                         fontSize: 13,
                         padding: { top: 12 },
