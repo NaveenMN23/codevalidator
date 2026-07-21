@@ -62,6 +62,7 @@ export async function fetchChallengeFiles(id: string): Promise<Record<string, st
 export interface DraftData {
   files: Record<string, string>;
   pendingTime: number | null;
+  updatedAt: string;
 }
 
 export async function fetchDraft(challengeId: string, _userId: string): Promise<DraftData | null> {
