@@ -76,7 +76,7 @@ public class ExecutionService {
     private static final Map<String, String> LANGUAGE_COMMANDS = Map.of(
             "java",   "mvn -o test -Dsurefire.skipAfterFailureCount=1",
             "node",   "npm test",
-            "python", "pytest"
+            "python", "python -m pytest"
     );
 
     public static String resolveCommand(String language) {

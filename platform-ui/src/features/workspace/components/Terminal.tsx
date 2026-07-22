@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useAppStore } from '../../../store';
@@ -6,6 +6,14 @@ import '@xterm/xterm/css/xterm.css';
 
 interface TerminalComponentProps {
   onTerminalReady: (terminal: Terminal) => void;
+  // Whether the terminal pane is currently visible. FitAddon can't measure a 0-size /
+  // just-shown container reliably from ResizeObserver alone, so we also force a fit()
+  // right after this flips true (see Workspace.tsx's showTerminal toggle).
+  active: boolean;
+}
+
+export interface TerminalHandle {
+  fit: () => void;
 }
 
 function getTerminalTheme() {
@@ -18,47 +26,63 @@ function getTerminalTheme() {
   };
 }
 
-export function TerminalComponent({ onTerminalReady }: TerminalComponentProps) {
-  const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<Terminal | null>(null);
-  const theme = useAppStore(state => state.theme);
+export const TerminalComponent = forwardRef<TerminalHandle, TerminalComponentProps>(
+  function TerminalComponent({ onTerminalReady, active }, ref) {
+    const terminalRef = useRef<HTMLDivElement>(null);
+    const xtermRef = useRef<Terminal | null>(null);
+    const fitAddonRef = useRef<FitAddon | null>(null);
+    const theme = useAppStore(state => state.theme);
 
-  useEffect(() => {
-    if (!terminalRef.current) return;
+    useImperativeHandle(ref, () => ({
+      fit: () => fitAddonRef.current?.fit(),
+    }));
 
-    const terminal = new Terminal({
-      cursorBlink: true,
-      theme: getTerminalTheme(),
-      fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-      allowTransparency: true,
-    });
+    useEffect(() => {
+      if (!terminalRef.current) return;
 
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
+      const terminal = new Terminal({
+        cursorBlink: true,
+        theme: getTerminalTheme(),
+        fontSize: 14,
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        allowTransparency: true,
+      });
 
-    terminal.open(terminalRef.current);
-    fitAddon.fit();
+      const fitAddon = new FitAddon();
+      terminal.loadAddon(fitAddon);
 
-    xtermRef.current = terminal;
-    onTerminalReady(terminal);
-
-    const resizeObserver = new ResizeObserver(() => {
+      terminal.open(terminalRef.current);
       fitAddon.fit();
-    });
-    resizeObserver.observe(terminalRef.current);
 
-    return () => {
-      terminal.dispose();
-      resizeObserver.disconnect();
-    };
-  }, []);
+      xtermRef.current = terminal;
+      fitAddonRef.current = fitAddon;
+      onTerminalReady(terminal);
 
-  useEffect(() => {
-    if (xtermRef.current) {
-      xtermRef.current.options.theme = getTerminalTheme();
-    }
-  }, [theme]);
+      const resizeObserver = new ResizeObserver(() => {
+        fitAddon.fit();
+      });
+      resizeObserver.observe(terminalRef.current);
 
-  return <div ref={terminalRef} className="h-full w-full overflow-hidden" />;
-}
+      return () => {
+        terminal.dispose();
+        resizeObserver.disconnect();
+      };
+    }, []);
+
+    useEffect(() => {
+      if (xtermRef.current) {
+        xtermRef.current.options.theme = getTerminalTheme();
+      }
+    }, [theme]);
+
+    useEffect(() => {
+      if (!active) return;
+      // The container was just given non-zero size again — ResizeObserver fires on the next
+      // layout pass, but a rAF-delayed explicit fit is more reliable across browsers.
+      const raf = requestAnimationFrame(() => fitAddonRef.current?.fit());
+      return () => cancelAnimationFrame(raf);
+    }, [active]);
+
+    return <div ref={terminalRef} className="h-full w-full overflow-hidden" />;
+  }
+);

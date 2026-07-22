@@ -52,5 +52,6 @@ export interface GradingResult {
     efficiency: { finding: string; score: number };
     followUp: { type: 'IMPLEMENTATION' | 'CONVERSATIONAL'; content: string };
     summary: string;
+    examples?: { input: string; expectedOutput: string; explanation: string }[];
   };
 }

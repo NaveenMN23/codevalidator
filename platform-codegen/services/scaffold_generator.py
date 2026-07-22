@@ -161,14 +161,9 @@ def _classify_compile_error(error_output: str, delta_phase: bool = False) -> str
         if "method" in symbol_kinds:
             if delta_phase:
                 symbol_hints.append(
-                    "You called a method that doesn't exist. Two distinct causes: "
-                    "(1) You invented a helper method on `this` that isn't actually defined — "
-                    "check <stub_file_content> for the real methods available and implement the "
-                    "logic inline instead. (2) You called a getter/setter on a DIFFERENT class "
-                    "(not the one in <stub_file_content>) that doesn't have that field — in THIS "
-                    "phase you cannot edit that other class's file at all, so restructure your "
-                    "logic to only use fields/methods that class already exposes (check "
-                    "<skeleton_classes>) rather than assuming a field it doesn't have."
+                    "You called a method that does not exist in the class. "
+                    "Check <stub_file_content> for the actual methods defined there. "
+                    "Do not invent helper methods — implement the logic inline."
                 )
             else:
                 symbol_hints.append(
@@ -1066,67 +1061,6 @@ def _fix_java_repository_method(files: dict[str, str], error_output: str) -> dic
     return fixed
 
 
-def _fix_java_missing_entity_field(files: dict[str, str], error_output: str) -> dict[str, str]:
-    """Deterministically add a missing plain field to a Lombok-annotated class when the
-    error is a missing get/is/set accessor on a class OTHER than the one being edited.
-    This exists because the delta phase (`FunctionDeltaOutput`) can only edit the stub's
-    own file — if generated logic needs a field on a sibling class, no amount of LLM
-    retrying inside that phase can fix it; only this deterministic pass or the
-    gold-master-assembly LLM patch (which CAN edit arbitrary files) can.
-
-    Field type is a pragmatic default, not a certainty: `is` prefix -> `boolean` (always
-    correct by Java/Lombok convention); `get`/`set` prefix -> `Integer = 0` (right for the
-    common case of counters/scores/etc., wrong for non-numeric fields). Safe either way:
-    compile validation re-checks the result before it's ever accepted, and a wrong guess
-    just leaves the pipeline exactly as stuck as before this fix existed — never worse.
-    """
-    class_to_path: dict[str, str] = {}
-    for path in files:
-        m = re.search(r"src/main/java/(.+)\.java$", path)
-        if m:
-            class_to_path[m.group(1).replace("/", ".")] = path
-
-    fixed = dict(files)
-    added: set[tuple[str, str]] = set()
-    for method_name, _args, owner_fqcn in _REPO_METHOD_MISSING_RE.findall(error_output):
-        accessor_match = re.match(r"^(get|is|set)([A-Z]\w*)$", method_name)
-        if not accessor_match:
-            continue
-        prefix, name = accessor_match.groups()
-        field_name = name[0].lower() + name[1:]
-
-        owner_path = class_to_path.get(owner_fqcn)
-        if not owner_path or owner_path not in fixed:
-            continue  # can't safely locate the owning class
-        if (owner_path, field_name.lower()) in added:
-            continue
-
-        owner_content = fixed[owner_path]
-        if not re.search(r"@(Getter|Setter|Data)\b", owner_content):
-            continue  # not Lombok-managed — don't guess at hand-written accessors
-
-        existing_fields = {f.lower() for f in _JAVA_INSTANCE_FIELD_RE.findall(owner_content)}
-        if field_name.lower() in existing_fields:
-            continue  # exists under a different case — real bug, leave to LLM
-
-        class_match = _JAVA_CLASS_OPEN_RE.search(owner_content)
-        if not class_match:
-            continue
-
-        field_type, default = ("boolean", "false") if prefix == "is" else ("Integer", "0")
-        declaration = f"\n\n    private {field_type} {field_name} = {default};\n"
-        owner_content = owner_content[:class_match.end()] + declaration + owner_content[class_match.end():]
-        fixed[owner_path] = owner_content
-        added.add((owner_path, field_name.lower()))
-        log.info(
-            f"ScaffoldGenerator: deterministically added missing field '{field_name}' "
-            f"({field_type}) to {owner_fqcn} ({owner_path}) — resolves missing "
-            f"{method_name}() accessor"
-        )
-
-    return fixed
-
-
 def _try_deterministic_fix(files: dict[str, str], error_output: str, language: str) -> tuple[dict[str, str], bool]:
     """Attempt structural, Java-convention-only fixes before falling back to an LLM
     patch — cheaper and more reliable than a round-trip for well-understood mismatches.
@@ -1137,7 +1071,6 @@ def _try_deterministic_fix(files: dict[str, str], error_output: str, language: s
         return files, False
     fixed = _fix_java_constructor_mismatch(files, error_output)
     fixed = _fix_java_repository_method(fixed, error_output)
-    fixed = _fix_java_missing_entity_field(fixed, error_output)
     return fixed, fixed != files
 
 

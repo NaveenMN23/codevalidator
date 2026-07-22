@@ -12,16 +12,6 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Pre-warm Maven .m2 cache with Spring Boot 3.2.0 dependency tree so compile
-# validation never needs network access at runtime inside the container.
-COPY warmup-pom.xml /tmp/mvn-warmup/pom.xml
-RUN mkdir -p /tmp/mvn-warmup/src/main/java/com/challenge \
-    && printf 'package com.challenge;\npublic class App {}\n' \
-       > /tmp/mvn-warmup/src/main/java/com/challenge/App.java \
-    && mvn -B -f /tmp/mvn-warmup/pom.xml dependency:go-offline -q \
-    && mvn -B -f /tmp/mvn-warmup/pom.xml test-compile -q \
-    && rm -rf /tmp/mvn-warmup
-
 # Set the working directory in the container
 WORKDIR /app
 
@@ -29,7 +19,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code into the container
 COPY . .

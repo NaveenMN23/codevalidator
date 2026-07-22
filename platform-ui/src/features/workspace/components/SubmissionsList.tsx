@@ -42,7 +42,7 @@ export function SubmissionsList({ challengeId, refreshKey, onViewSubmission }: S
   }
 
   if (submissions.length === 0) {
-    return <p className="p-4 text-sm text-text-muted">No submissions yet.</p>;
+    return <div className="flex h-full items-center justify-center p-4 text-[14px] text-text-muted">No submissions yet.</div>;
   }
 
   return (

@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { File, Folder, ChevronRight, ChevronDown } from 'lucide-react';
+import { File, Folder, ChevronRight, ChevronDown, Lock } from 'lucide-react';
+import { isLockedPath } from '../fileLocking';
 
 interface FileExplorerProps {
   files: Record<string, any>;
@@ -29,6 +30,7 @@ function TreeItem({ name, node, path, onSelect, selectedFile, depth }: TreeItemP
   }, [isFolder, isOpen, onSelect, path]);
 
   const isSelected = selectedFile === path;
+  const locked = !isFolder && isLockedPath(path);
 
   return (
     <div className="select-none">
@@ -36,8 +38,8 @@ function TreeItem({ name, node, path, onSelect, selectedFile, depth }: TreeItemP
         onClick={handleClick}
         className={`flex items-center py-[3px] cursor-pointer group ${
           isSelected
-            ? 'bg-white/10 text-text-main'
-            : 'text-text-muted hover:bg-white/[0.07] hover:text-text-main'
+            ? 'bg-black/5 dark:bg-white/10 text-text-main'
+            : 'text-text-muted hover:bg-black/5 dark:hover:bg-white/[0.07] hover:text-text-main'
         }`}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
@@ -55,7 +57,8 @@ function TreeItem({ name, node, path, onSelect, selectedFile, depth }: TreeItemP
             <File size={14} className={isSelected ? 'text-text-main' : 'text-[#858585] group-hover:text-text-muted'} />
           )}
         </div>
-        <span className="text-[13px] truncate">{name}</span>
+        <span className="text-[14px] truncate cursor-pointer">{name}</span>
+        {locked && <Lock size={10} className="text-text-muted ml-1.5 shrink-0" />}
       </div>
       {isFolder && isOpen && Object.entries(node.directory).map(([childName, childNode]: [string, any]) => (
         <TreeItem
@@ -80,7 +83,7 @@ export function FileExplorer({ files, onSelect, selectedFile }: FileExplorerProp
       {/* WORKSPACE collapsible root section */}
       <div
         onClick={() => setWorkspaceOpen(v => !v)}
-        className="flex items-center gap-1 px-2 py-1.5 cursor-pointer hover:bg-white/5 shrink-0"
+        className="flex items-center gap-1 px-2 py-1.5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 shrink-0"
       >
         {workspaceOpen
           ? <ChevronDown size={12} className="text-text-muted shrink-0" />
