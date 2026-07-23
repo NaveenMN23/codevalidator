@@ -26,7 +26,8 @@ function App() {
       <main className={`flex-grow flex flex-col min-h-0 ${showNavbar ? 'pt-[60px]' : ''}`}>
         <Suspense fallback={<div className="flex h-full items-center justify-center bg-background text-text-muted font-medium">Loading...</div>}>
           <Routes>
-            <Route path="/" element={<DashboardPage />} />
+            <Route path="/" element={<Navigate to="/problems" replace />} />
+            <Route path="/problems" element={<DashboardPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/workspace/:challengeId" element={
@@ -36,6 +37,8 @@ function App() {
             } />
             <Route path="/profile" element={<ProtectedRoute><div className="p-8">Profile</div></ProtectedRoute>} />
             <Route path="/leaderboard" element={<ProtectedRoute><div className="p-8">Leaderboard</div></ProtectedRoute>} />
+            <Route path="/pricing" element={<div className="p-8">Pricing</div>} />
+            <Route path="/refer" element={<div className="p-8">Refer</div>} />
             <Route path="/u/:username" element={<div className="p-8">Public Profile</div>} />
           </Routes>
         </Suspense>

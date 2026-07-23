@@ -1,6 +1,5 @@
 {
   "problemId": "calculator-application-easy-perform-calculation",
-  "sessionId": "uuid-supplied-at-runtime",
   "task": {
     "taskType": "FEATURE_IMPLEMENTATION",
     "title": "Calculator: Perform a Calculation",
@@ -31,20 +30,6 @@
   },
   "bugMeta": null,
   "evaluation": {
-    "senioritySignals": [
-      "Uses elif/else or a dispatch dict — never bare if branches that all evaluate on every call",
-      "Guards against divide-by-zero explicitly (if operand2 == 0: raise) before performing the division — proactive rather than reactive",
-      "Raises InvalidOperationException (the domain exception) for unknowns — not ValueError or bare Exception",
-      "Notices that CalculationRepository is a stub and the result is never persisted — mentions the audit-trail gap without being prompted",
-      "Dispatch-dict approach: articulates the extensibility trade-off vs if/elif readability"
-    ],
-    "commonMistakes": [
-      "Returns 0 or None silently on division by zero instead of raising",
-      "Raises ValueError or bare Exception instead of InvalidOperationException for unsupported operations",
-      "Uses bare if for every branch — all four conditions evaluate on every call, and no else covers the unknown-operation path",
-      "Catches Python's ZeroDivisionError and re-raises a different or incorrect exception type",
-      "Treats CalculationRepository as irrelevant background noise — misses the persistence gap entirely"
-    ],
     "rubric": {
       "correctness": {
         "9-10": "All four operations correct; ZeroDivisionError raised explicitly for divide-by-zero; InvalidOperationException raised for unknowns; no silent fallback",
@@ -58,21 +43,55 @@
         "4-6": "Works but skips any complexity discussion",
         "1-3": "Obvious anti-pattern introduced or irrelevant inefficiency"
       }
-    }
+    },
+    "senioritySignals": [
+      "Uses elif/else or a dispatch dict — never bare if branches that all evaluate on every call",
+      "Guards against divide-by-zero explicitly (if operand2 == 0: raise) before performing the division — proactive rather than reactive",
+      "Raises InvalidOperationException (the domain exception) for unknowns — not ValueError or bare Exception",
+      "Notices that CalculationRepository is a stub and the result is never persisted — mentions the audit-trail gap without being prompted",
+      "Dispatch-dict approach: articulates the extensibility trade-off vs if/elif readability"
+    ],
+    "commonMistakes": [
+      "Returns 0 or None silently on division by zero instead of raising",
+      "Raises ValueError or bare Exception instead of InvalidOperationException for unsupported operations",
+      "Uses bare if for every branch — all four conditions evaluate on every call, and no else covers the unknown-operation path",
+      "Catches Python's ZeroDivisionError and re-raises a different or incorrect exception type",
+      "Treats CalculationRepository as irrelevant background noise — misses the persistence gap entirely"
+    ]
   },
   "followUpContext": {
     "interviewerFocusAreas": [
       {
-        "area": "CORRECTNESS",
-        "scope": "Exception contract — does the exception type matter? Walk through what happens in the controller if InvalidOperationException is thrown for divide-by-zero vs ZeroDivisionError — the controller catches them separately, so swapping types would break the HTTP mapping."
+        "area": "EXCEPTION_CONTRACT",
+        "priority": 1,
+        "preferredFormat": "MCQ",
+        "scope": "Does the exception type matter? Walk through what happens in the controller if InvalidOperationException is thrown for divide-by-zero vs ZeroDivisionError — the controller catches them separately, so swapping types would break the HTTP mapping.",
+        "probeQuestion": "If you raise InvalidOperationException instead of ZeroDivisionError for divide-by-zero, which HTTP status code would the caller receive and why?",
+        "goodAnswerIndicator": "Knows that the controller maps ZeroDivisionError → 400 and InvalidOperationException → 400 but via a different catch block; swapping types would still return 400 but could break a more specific handler if one existed"
       },
       {
         "area": "EXTENSIBILITY",
-        "scope": "Adding a fifth operation such as modulo or power — how many lines change in a bare-if chain vs a dispatch dict? Which pattern is safer when two engineers add operations in parallel?"
+        "priority": 1,
+        "preferredFormat": "TEXT",
+        "scope": "Adding a fifth operation such as modulo or power — how many lines change in a bare-if chain vs a dispatch dict? Which pattern is safer when two engineers add operations in parallel?",
+        "probeQuestion": "How would you add a 'modulo' operation to your current implementation? How many places in the code would you need to change?",
+        "goodAnswerIndicator": "If they used dispatch dict: one line in the dict. If they used if/elif: two places (new elif + updated docstring/validation). Strong answers mention merge-conflict risk when two engineers add operations in parallel branches"
       },
       {
-        "area": "DESIGN",
-        "scope": "CalculationRepository is a stub — the result is computed but never stored. What would a complete history/audit-trail implementation look like, and how would it change the service signature (e.g. injecting a db session)?"
+        "area": "PERSISTENCE_GAP",
+        "priority": 2,
+        "preferredFormat": "TEXT",
+        "scope": "CalculationRepository is a stub — the result is computed but never stored. What would a complete history/audit-trail implementation look like?",
+        "probeQuestion": "CalculationRepository exists in this project but is never called in your implementation. What would break in production if calculations are never persisted?",
+        "goodAnswerIndicator": "Identifies that history/audit endpoints return empty results; mentions that injecting a DB session or calling repo.save(result) after computation is the fix; ideally notes the service signature would need to accept a repo dependency"
+      },
+      {
+        "area": "FLOAT_PRECISION",
+        "priority": 2,
+        "preferredFormat": "TRUE_FALSE",
+        "scope": "Floating-point imprecision: 0.1 + 0.2 does not equal 0.3 exactly in Python. Does the candidate mention this?",
+        "probeQuestion": "True or False: in Python, 0.1 + 0.2 == 0.3",
+        "goodAnswerIndicator": "False — 0.1 + 0.2 == 0.30000000000000004; strong answers suggest using decimal.Decimal or rounding for financial calculations"
       }
     ],
     "expectedApproaches": [
@@ -91,17 +110,30 @@
       "Unsupported operation string: 'modulo', 'power', empty string, None coerced to string",
       "operand1 = 0 divided by operand2 = 0 — ZeroDivisionError wins; not a silent 0",
       "Very large floats — Python handles overflow to inf; worth flagging if candidate mentions it",
-      "Floating-point imprecision: 0.1 + 0.2 does not equal 0.3 exactly — probe if candidate mentions this"
+      "Floating-point imprecision: 0.1 + 0.2 does not equal 0.3 exactly"
     ],
     "scaleUpDimensions": [
-      "Persist each calculation to the database via CalculationRepository for full audit history",
-      "Support complex expression parsing (infix strings like '3 + 4 * 2') via a proper Shunting-Yard or AST parser",
-      "Pluggable operation registry: third-party code registers new operations at startup without forking the service"
+      { "dimension": "Persist each calculation to the database via CalculationRepository for full audit history", "triggerCondition": "candidate noticed the stub but did not implement persistence" },
+      { "dimension": "Support complex expression parsing (infix strings like '3 + 4 * 2') via a proper Shunting-Yard or AST parser", "triggerCondition": "candidate implemented dispatch dict cleanly and mentioned extensibility" },
+      { "dimension": "Pluggable operation registry: third-party code registers new operations at startup without forking the service", "triggerCondition": "candidate asked about open/closed principle or plugin architecture" }
     ],
-    "followUpIntent": {
-      "type": "EVALUATOR_DECIDES",
-      "hint": "If candidate used bare-if branches, probe the redundant evaluation and ask how they'd add modulo. If they used a dispatch dict, skip extensibility and go straight to the missing CalculationRepository persistence gap. If they noticed and commented on the stub unprompted, jump to expression parsing as the scale-up discussion.",
-      "minimumTimeRemainingSeconds": 600
-    }
+    "implementationChallenges": [
+      {
+        "id": "dispatch-table-refactor",
+        "trigger": "candidate used bare if/elif chain instead of a dispatch dict",
+        "instruction": "Refactor perform_calculation() to use a dictionary mapping operation strings to callables. The divide handler must guard against zero explicitly and raise ZeroDivisionError. Add a 'modulo' operation as a sixth entry to demonstrate extensibility.",
+        "targetFile": "src/services/CalculatorService.py",
+        "acceptanceCriteria": "Adding a new operation requires exactly one new dict entry; existing tests still pass; modulo operation works correctly",
+        "difficulty": "EASY"
+      },
+      {
+        "id": "persist-to-repository",
+        "trigger": "candidate did not call CalculationRepository anywhere in their implementation",
+        "instruction": "Update perform_calculation() to persist each computation by calling CalculationRepository.save() with a Calculation model instance. The method signature should remain unchanged — inject the repository via dependency injection or a module-level instance.",
+        "targetFile": "src/services/CalculatorService.py",
+        "acceptanceCriteria": "After each successful operation, a Calculation record exists in the repository; GET /history returns the persisted results",
+        "difficulty": "EASY"
+      }
+    ]
   }
 }

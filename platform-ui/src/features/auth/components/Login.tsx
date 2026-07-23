@@ -121,8 +121,8 @@ export function Login() {
       <div style={CARD}>
         {/* Icon */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
-          <div style={{ width: 52, height: 52, background: '#000', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <UserCircle2 size={28} color="#fff" />
+          <div style={{ width: 52, height: 52, background: 'var(--accent-color)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <UserCircle2 size={28} className="text-[var(--on-accent)]" />
           </div>
         </div>
 
@@ -134,7 +134,7 @@ export function Login() {
         </p>
 
         {error && (
-          <p style={{ color: '#dc2626', fontSize: 13, margin: '0 0 16px', padding: '8px 12px', background: '#fee2e2', borderRadius: 6 }}>
+          <p style={{ color: 'var(--color-danger)', fontSize: 13, margin: '0 0 16px', padding: '8px 12px', background: 'var(--color-danger-bg)', borderRadius: 6, border: '1px solid var(--color-danger-border)' }}>
             {error}
           </p>
         )}
@@ -180,7 +180,7 @@ export function Login() {
           <button
             type="submit"
             disabled={isSubmitting}
-            style={{ width: '100%', padding: '11px 0', background: '#000', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1, marginTop: 4 }}
+            style={{ width: '100%', padding: '11px 0', background: 'var(--accent-strong)', color: 'var(--on-accent)', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1, marginTop: 4 }}
           >
             {isSubmitting ? 'Signing in…' : 'Sign In'}
           </button>

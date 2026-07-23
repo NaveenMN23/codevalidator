@@ -25,25 +25,33 @@ export function Navbar() {
       justifyContent: 'space-between',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+        <Link to="/problems" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
           <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Code2 size={18} color="#fff" />
+            <Code2 size={18} className="text-[var(--on-accent)]" />
           </div>
           <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-main)' }}>
             Code<span style={{ color: 'var(--accent-color)' }}>Forge</span>
           </span>
         </Link>
 
-        {isAuthenticated && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginLeft: 8 }}>
-            <Link to="/" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none' }}>
-              Problems
-            </Link>
-            <Link to="/leaderboard" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Trophy size={14} color="#eab308" /> Leaderboard
-            </Link>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginLeft: 8 }}>
+          {isAuthenticated && (
+            <>
+              <Link to="/problems" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none' }}>
+                Problems
+              </Link>
+              <Link to="/leaderboard" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Trophy size={14} color="#eab308" /> Leaderboard
+              </Link>
+            </>
+          )}
+          <Link to="/pricing" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none' }}>
+            Pricing
+          </Link>
+          <Link to="/refer" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none' }}>
+            Refer
+          </Link>
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -73,7 +81,7 @@ export function Navbar() {
             <Link to="/login" style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', textDecoration: 'none', padding: '6px 14px' }}>
               Log in
             </Link>
-            <Link to="/signup" style={{ fontSize: 13, fontWeight: 500, background: '#000', color: '#fff', textDecoration: 'none', padding: '6px 14px', borderRadius: 8 }}>
+            <Link to="/signup" style={{ fontSize: 13, fontWeight: 600, background: 'var(--accent-strong)', color: 'var(--on-accent)', textDecoration: 'none', padding: '6px 14px', borderRadius: 8 }}>
               Sign up
             </Link>
           </div>

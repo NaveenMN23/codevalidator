@@ -1,29 +1,5 @@
-/* Custom Split Gutter */
-.gutter {
-  background-color: transparent;
-  background-repeat: no-repeat;
-  background-position: 50%;
-  transition: background-color 0.2s;
-}
-
-.gutter:hover {
-  background-color: var(--border-main);
-}
-
-.gutter.gutter-horizontal {
-  cursor: col-resize;
-  width: 4px !important;
-  border-left: 1px solid var(--border-main);
-  border-right: 1px solid var(--border-main);
-}
-
-.gutter.gutter-vertical {
-  cursor: row-resize;
-  border-top: 1px solid var(--border-main);
-  border-bottom: 1px solid var(--border-main);
-}
-
-/* Scrollbar styling — workspace panels */
+/* Scrollbar styling — workspace panels (not duplicated elsewhere; gutter/prose/xterm
+   scrollbar rules live in src/index.css as the single owner) */
 .scrollbar-thin::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -42,45 +18,7 @@
   background: var(--accent-color);
 }
 
-/* Prose overrides for problem statement */
-.prose-xs {
-  font-size: 0.75rem;
-  line-height: 1.5;
-}
-
-.prose pre {
-  background-color: var(--bg-elevated) !important;
-  border: 1px solid var(--border-main);
-  border-radius: 6px;
-  padding: 12px !important;
-  font-size: 0.7rem;
-}
-
-.prose code {
-  color: var(--accent-color);
-  background-color: var(--bg-elevated);
-  padding: 1px 3px;
-  border-radius: 3px;
-  font-size: 0.9em;
-}
-
-.prose h1, .prose h2, .prose h3 {
-  color: var(--text-main);
-  margin-top: 1.2em;
-  margin-bottom: 0.4em;
-  font-weight: 600;
-}
-
-.prose p {
-  color: var(--text-muted);
-  margin-bottom: 0.8em;
-}
-
-/* Terminal scrollbar */
-.xterm-viewport::-webkit-scrollbar {
-  width: 4px;
-}
-
-.xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--border-main);
+.workspace-split.no-gutter > .gutter {
+  display: none !important;
+  pointer-events: none;
 }

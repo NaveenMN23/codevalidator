@@ -37,7 +37,7 @@ def fresh_session():
     return SessionState(session_id="test-123", problem_id="vending-machine-easy")
 
 
-def _follow_up(intent=FollowUpIntent.ESCALATE, fmt=FollowUpFormat.MCQ):
+def _follow_up(intent=FollowUpIntent.ESCALATE, fmt=FollowUpFormat.MCQ, area="CONCURRENCY"):
     return FollowUp(
         intent=intent,
         type=FollowUpType.CONVERSATIONAL,
@@ -45,6 +45,7 @@ def _follow_up(intent=FollowUpIntent.ESCALATE, fmt=FollowUpFormat.MCQ):
         question="Which is O(1)?",
         options=["A) X", "B) Y"],
         expected_answer_key="A",
+        chosen_area=area,
     )
 
 
@@ -149,6 +150,87 @@ def test_time_not_in_final_score(manager, fresh_session):
     report_late = manager._compute_report(fresh_session, output, _BLUEPRINT, 700, False)
     # pace.gate_fired differs but finalScore must not
     assert report_early.final_score == report_late.final_score
+
+
+def test_probed_areas_tracked(manager, fresh_session):
+    output = CodeEvalOutput(
+        correctness=CorrectnessRating(rating=8, passed=True, finding="Good"),
+        efficiency=EfficiencyRating(rating=7, passed=True, finding="OK"),
+        follow_up=_follow_up(area="EXCEPTION_ORDERING"),
+    )
+    with patch("services.session_manager.session_store"):
+        session, _ = manager.reconcile_code_submission(
+            session=fresh_session,
+            output=output,
+            intent=FollowUpIntent.ESCALATE,
+            force_close=False,
+            blueprint=_BLUEPRINT,
+            time_remaining=2000,
+            min_time=600,
+        )
+    assert "EXCEPTION_ORDERING" in session.probed_areas
+
+
+def test_concept_scores_recorded_on_answer(manager, fresh_session):
+    fresh_session.active_follow_up = _follow_up(area="CONCURRENCY")
+    output = ConversationalEvalOutput(
+        finding="Candidate correctly identified race condition.",
+        candidate_depth=CandidateDepth.ADEQUATE,
+        answer_rating=8,
+        follow_up=_follow_up(area="DESIGN"),
+    )
+    with patch("services.session_manager.session_store"):
+        session, _ = manager.reconcile_conversational_answer(
+            session=fresh_session,
+            output=output,
+            intent=FollowUpIntent.ESCALATE,
+            force_close=False,
+            blueprint=_BLUEPRINT,
+            time_remaining=2000,
+            min_time=600,
+        )
+    assert session.concept_scores.get("CONCURRENCY") == 8
+    assert "CONCURRENCY" in session.concept_findings
+
+
+def test_concept_dimensions_in_report(manager, fresh_session):
+    fresh_session.concept_scores = {"CONCURRENCY": 8, "DESIGN": 5}
+    fresh_session.concept_findings = {
+        "CONCURRENCY": "Good race condition awareness.",
+        "DESIGN": "Missed cash reconciliation gap.",
+    }
+    output = CodeEvalOutput(
+        correctness=CorrectnessRating(rating=8, passed=True, finding="Good"),
+        efficiency=EfficiencyRating(rating=7, passed=True, finding="OK"),
+    )
+    report = manager._compute_report(fresh_session, output, _BLUEPRINT, 2000, False)
+    assert "CONCURRENCY" in report.concept_dimensions
+    assert report.concept_dimensions["CONCURRENCY"].rating == 8
+    assert report.concept_dimensions["DESIGN"].rating == 5
+    # weight is 0 — informational only, not in final_score
+    assert report.concept_dimensions["CONCURRENCY"].weight == 0
+
+
+def test_acknowledgment_prepended_to_history(manager, fresh_session):
+    output = CodeEvalOutput(
+        acknowledgment="Nice — you got the stock-first ordering right.",
+        correctness=CorrectnessRating(rating=8, passed=True, finding="Good"),
+        efficiency=EfficiencyRating(rating=7, passed=True, finding="OK"),
+        follow_up=_follow_up(area="CONCURRENCY"),
+    )
+    with patch("services.session_manager.session_store"):
+        session, _ = manager.reconcile_code_submission(
+            session=fresh_session,
+            output=output,
+            intent=FollowUpIntent.ESCALATE,
+            force_close=False,
+            blueprint=_BLUEPRINT,
+            time_remaining=2000,
+            min_time=600,
+        )
+    assert len(session.conversation_history) == 1
+    assert "Nice" in session.conversation_history[0].content
+    assert "Which is O(1)?" in session.conversation_history[0].content
 
 
 def test_four_turn_cap(manager, fresh_session):

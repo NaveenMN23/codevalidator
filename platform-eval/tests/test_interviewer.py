@@ -9,13 +9,42 @@ _BLUEPRINT = {
         "difficulty": "EASY",
         "expectedComplexity": {"time": "O(1)", "space": "O(1)"},
     },
-    "rubric": "Check stock update and fund deduction.",
+    "evaluation": {
+        "rubric": "Check stock update and fund deduction.",
+        "commonMistakes": ["forgetting to decrement stock"],
+    },
     "followUpContext": {
         "interviewerFocusAreas": [
-            {"area": "atomicity", "scope": "Is stock decrement atomic?", "hint": "Think about concurrent access."}
+            {
+                "area": "CONCURRENCY",
+                "priority": 1,
+                "preferredFormat": "MCQ",
+                "scope": "Is stock decrement atomic?",
+                "probeQuestion": "What happens when two buyers request the last unit simultaneously?",
+                "goodAnswerIndicator": "Mentions @Transactional or atomic UPDATE",
+            },
+            {
+                "area": "DESIGN",
+                "priority": 2,
+                "preferredFormat": "TEXT",
+                "scope": "Is the cash float reconciled?",
+                "probeQuestion": "Where does the machine's cash balance get updated?",
+                "goodAnswerIndicator": "Mentions CashRepository or cash float tracking",
+            },
         ],
-        "scaleUpDimensions": ["concurrent vending", "distributed inventory"],
-        "commonMistakes": ["forgetting to decrement stock"],
+        "scaleUpDimensions": [
+            {"dimension": "concurrent vending", "triggerCondition": "candidate handled single-machine race"},
+        ],
+        "implementationChallenges": [
+            {
+                "id": "add-transactional",
+                "trigger": "no @Transactional used",
+                "instruction": "Add @Transactional and handle the race condition.",
+                "targetFile": "src/.../VendingMachineService.java",
+                "acceptanceCriteria": "Two concurrent calls for the last unit result in exactly one success",
+                "difficulty": "MEDIUM",
+            }
+        ],
     },
 }
 
@@ -76,6 +105,42 @@ def test_answer_messages_structure():
     )
     assert "atomic" in user or "dispense" in system
     assert "synchronized" in user
+
+
+def test_probed_areas_excluded_from_remaining(monkeypatch):
+    system, user = interviewer.build_code_submission_messages(
+        blueprint=_BLUEPRINT,
+        gold_master_files={},
+        candidate_files={"src/f.java": "code"},
+        intent=FollowUpIntent.ESCALATE,
+        legal_formats=[FollowUpFormat.MCQ],
+        history=[],
+        time_remaining=2000,
+        difficulty="EASY",
+        probed_areas=["CONCURRENCY"],  # already asked
+    )
+    # CONCURRENCY is probed — should appear in "already probed" section
+    assert "CONCURRENCY" in user
+    # DESIGN is remaining — should appear in remaining section
+    assert "DESIGN" in user
+
+
+def test_remaining_areas_sorted_by_priority():
+    system, user = interviewer.build_code_submission_messages(
+        blueprint=_BLUEPRINT,
+        gold_master_files={},
+        candidate_files={"src/f.java": "code"},
+        intent=FollowUpIntent.ESCALATE,
+        legal_formats=[FollowUpFormat.MCQ],
+        history=[],
+        time_remaining=2000,
+        difficulty="EASY",
+        probed_areas=[],
+    )
+    # Priority-1 area (CONCURRENCY) should appear before priority-2 (DESIGN) in remaining
+    concurrency_pos = user.find("CONCURRENCY")
+    design_pos = user.find("DESIGN")
+    assert concurrency_pos < design_pos
 
 
 def test_mcq_format_instruction_present():
