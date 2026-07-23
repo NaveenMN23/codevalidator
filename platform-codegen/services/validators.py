@@ -107,13 +107,18 @@ class FunctionDeltaOutput(BaseModel):
 
     For debug scenarios, `bug_code` holds the broken implementation that goes into the
     student scaffold (the skeleton already has it, but this field makes it explicit).
+
+    For `check_mode: non_deterministic` scenarios, `rubric` holds the LLM-judge grading
+    criteria produced by `judge_function_{lang}` in place of `test_hidden` — the candidate's
+    submission is scored against it by an LLM judge rather than exact-match assertions.
     """
     function_body: str
-    test_hidden: str
+    test_hidden: str = ""
     test_visible: str
     bug_code: str | None = None
     imports: list[str] = []
     fields: list[str] = []
+    rubric: list[dict] | None = None
 
     @field_validator("function_body")
     @classmethod
@@ -122,19 +127,34 @@ class FunctionDeltaOutput(BaseModel):
             raise ValueError("function_body must not be empty")
         return v
 
-    @field_validator("test_hidden")
-    @classmethod
-    def test_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("test_hidden must not be empty")
-        return v
-
     @field_validator("test_visible")
     @classmethod
     def visible_test_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("test_visible must not be empty")
         return v
+
+    @model_validator(mode="after")
+    def test_hidden_or_rubric_present(self) -> "FunctionDeltaOutput":
+        # Judge-mode (check_mode: non_deterministic) deltas carry `rubric` instead of a
+        # hidden test suite — `test_hidden` is legitimately empty in that case. Every
+        # other delta must still have a non-empty test_hidden, as before.
+        if not self.rubric and (not self.test_hidden or not self.test_hidden.strip()):
+            raise ValueError("test_hidden must not be empty unless rubric is provided")
+        return self
+
+
+class JudgeQAOutput(BaseModel):
+    """Output from Phase 4 judge_scenario_qa call — QA verdict on a single generated scenario."""
+    assessed_tier: str
+    difficulty_match: bool
+    time_estimate_minutes: int
+    time_in_range: bool
+    topic_match: bool
+    tests_valid: bool
+    test_issues: list[str] = []
+    overall_pass: bool
+    findings: str
 
 
 class SingleTierOutput(BaseModel):

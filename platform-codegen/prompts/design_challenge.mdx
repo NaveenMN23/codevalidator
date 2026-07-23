@@ -12,6 +12,8 @@ You will receive:
 - `<tiers>` — comma-separated tiers to generate (e.g. `easy` or `easy,medium,hard`)
 - `<scenarios_per_tier>` — total number of scenarios each tier must have (integer)
 - `<debug_scenarios_per_tier>` — how many of those scenarios must be of type `debug` (the rest are `implement`)
+- `<non_deterministic_scenarios_per_tier>` — how many of those scenarios must have `check_mode: "non_deterministic"` (the rest are `"deterministic"`). This is an axis independent of `type` — a scenario can be any combination of `implement`/`debug` and `deterministic`/`non_deterministic`.
+- `<allowed_topics>` — comma-separated closed list of topic tags (e.g. `concurrency,caching,pagination`). Every scenario's `topic` MUST be chosen from this list.
 - `<problem>` — the problem description
 - `<admin_feedback>` *(optional)* — revision notes from the admin who reviewed a previous design
 
@@ -62,6 +64,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "easy-cancel-booking",
           "type": "implement",
+          "check_mode": "deterministic",
+          "topic": "data-modeling",
           "title": "BookMyShow: Cancel a Booking",
           "description": "The cancelBooking() function body is missing. Delete the booking, reset the seat, and refund 10 loyalty points. Handle not-found and ownership errors.",
           "strip_description": "The entire body of cancelBooking() in src/handlers/bookings.ts — delete booking, reset seat.is_booked, add 10 loyalty points, return 404/403 on errors",
@@ -70,6 +74,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "easy-create-booking",
           "type": "implement",
+          "check_mode": "deterministic",
+          "topic": "data-modeling",
           "title": "BookMyShow: Create a Booking",
           "description": "The createBooking() function body is missing. Implement it: validate the seat is available, create the booking, mark the seat as booked.",
           "strip_description": "The entire body of createBooking() in src/handlers/bookings.ts — check seat availability, insert booking, set seat.is_booked=true, handle already-booked case",
@@ -78,6 +84,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "easy-get-available-seats",
           "type": "implement",
+          "check_mode": "deterministic",
+          "topic": "search-filtering",
           "title": "BookMyShow: List Available Seats",
           "description": "The getAvailableSeats() function body is missing. Return all seats for a show that are not booked, sorted by seat number.",
           "strip_description": "The entire body of getAvailableSeats() in src/handlers/bookings.ts — query seats where is_booked=false for the given show_id, return sorted list",
@@ -92,6 +100,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "medium-webhook-idempotency",
           "type": "implement",
+          "check_mode": "deterministic",
+          "topic": "idempotency",
           "title": "BookMyShow: Idempotent Webhook Handler",
           "description": "processWebhook() must be idempotent — duplicate delivery must not cause double charges.",
           "strip_description": "The entire body of processWebhook() in webhookService.ts",
@@ -100,6 +110,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "medium-booking-pagination",
           "type": "implement",
+          "check_mode": "deterministic",
+          "topic": "pagination",
           "title": "BookMyShow: Paginated Booking History",
           "description": "getBookingHistory() must return paginated results with a cursor — offset-based pagination is already rejected in the codebase.",
           "strip_description": "The entire body of getBookingHistory() in bookingService.ts — cursor-based pagination",
@@ -108,6 +120,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "medium-seat-status-bug",
           "type": "debug",
+          "check_mode": "deterministic",
+          "topic": "consistency",
           "title": "BookMyShow: Seat Status Not Updated on Cancellation",
           "description": "cancelBooking() exists and runs without error, but after cancellation the seat remains marked as booked. Another user cannot book it. Find and fix the bug.",
           "strip_description": "",
@@ -122,6 +136,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "hard-circuit-breaker",
           "type": "implement",
+          "check_mode": "non_deterministic",
+          "topic": "resilience",
           "title": "BookMyShow: Circuit Breaker Recovery",
           "description": "The circuit breaker in showService.getShow() opens on DB errors but never attempts recovery — it stays open forever. Implement the half-open state and recovery probe.",
           "strip_description": "The half-open state and recovery logic in src/infrastructure/circuitBreaker.ts",
@@ -130,6 +146,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "hard-cache-stampede",
           "type": "debug",
+          "check_mode": "deterministic",
+          "topic": "caching",
           "title": "BookMyShow: Cache Stampede Race Condition",
           "description": "cacheService.getOrLoad() is implemented, but under load multiple threads bypass the cache simultaneously and hammer the database. Find and fix the race condition using the existing mutex.",
           "strip_description": "",
@@ -138,6 +156,8 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
         {
           "scenario_tag": "hard-distributed-lock-race",
           "type": "debug",
+          "check_mode": "deterministic",
+          "topic": "concurrency",
           "title": "BookMyShow: Distributed Lock Race Condition",
           "description": "confirmBooking() uses a distributed lock, but two users can still book the same seat if requests arrive within the same millisecond. Find the flaw in the locking strategy and fix it.",
           "strip_description": "",
@@ -165,6 +185,11 @@ Output a structured JSON design document with **ONLY the tiers listed in `<tiers
   - This applies uniformly to ALL tiers regardless of difficulty level
   - If D = 0: all scenarios are `implement`; if D = N: all scenarios are `debug`
   - Place `implement` scenarios first, then `debug` scenarios
+- Check-mode distribution — controlled explicitly by `<non_deterministic_scenarios_per_tier>` (K) and `<scenarios_per_tier>` (N), **independent of the `type` distribution above** (a scenario's `type` and `check_mode` are chosen independently — any combination is valid):
+  - Generate exactly **K** scenarios with `check_mode: "non_deterministic"` per tier and exactly **(N − K)** with `check_mode: "deterministic"` per tier, applied uniformly to ALL tiers
+  - If K = 0: all scenarios are `"deterministic"` (this is the default when the field is absent)
+  - Only mark a scenario `"non_deterministic"` when its correct output **legitimately varies** in form (free text, formatting, timing/recovery behavior, multiple valid strategies) — not for scenarios with one exact correct answer. If K forces more non-deterministic scenarios than the tier has genuinely variable-output candidates, prefer scenarios whose behavior involves timing, recovery, or open-ended responses over strict CRUD operations.
+- `topic` — every scenario's `topic` MUST be one of the values listed in `<allowed_topics>`, chosen for whichever value best matches the scenario's core mechanism. Do not invent a topic outside the provided list.
 - Only output the tiers listed in `<tiers>` — omit any not requested
 - **IF `<admin_feedback>` IS PROVIDED:** Treat it as mandatory revision instructions. You MUST incorporate the feedback — change scenario types, swap mechanisms, adjust architecture, or redesign entire tiers as directed. Keep the same `challenge.name` and domain unless the feedback explicitly requests a change.
 - Output JSON only. No markdown fences, no explanation text.

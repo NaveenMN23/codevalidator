@@ -16,6 +16,7 @@ def _handle_design_preview(job_id: str, body: dict) -> None:
             tiers=body.get("tiers", ["easy", "medium", "hard"]),
             scenarios_per_tier=body.get("scenariosPerTier", 3),
             debug_scenarios_per_tier=body.get("debugScenariosPerTier", 1),
+            non_deterministic_scenarios_per_tier=body.get("nonDeterministicScenariosPerTier", 0),
             feedback=body.get("feedback"),
         )
         result_publisher.publish(job_id, "DESIGN_PREVIEW", "COMPLETED", design_output)
@@ -35,6 +36,7 @@ def _handle_full_generate(job_id: str, body: dict) -> None:
             tiers=body.get("tiers", ["easy", "medium", "hard"]),
             scenarios_per_tier=body.get("scenariosPerTier", 3),
             debug_scenarios_per_tier=body.get("debugScenariosPerTier", 1),
+            non_deterministic_scenarios_per_tier=body.get("nonDeterministicScenariosPerTier", 0),
             design_json=body.get("designJson"),
         )
         

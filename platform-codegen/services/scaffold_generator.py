@@ -13,6 +13,7 @@ from services.validators import (
     SkeletonOutput,
     SkeletonPatchOutput,
     FunctionDeltaOutput,
+    JudgeQAOutput,
     validate_with_correction,
 )
 from generator.engine import generator
@@ -29,6 +30,57 @@ _JAVA_APP_TEMPLATE = (
 
 _SUPPORTED_LANGUAGES = {"node", "java", "python"}
 _TIERS = ("easy", "medium", "hard")
+
+# Fixed topic taxonomy for scenario classification (Phase 1 design assigns one per scenario;
+# Phase 4 judge QA verifies the assignment matches what the scenario actually exercises).
+# Starting list — extend as new challenge domains require topics not covered here.
+_TOPICS = (
+    "concurrency",
+    "caching",
+    "pagination",
+    "auth-authz",
+    "data-modeling",
+    "idempotency",
+    "rate-limiting",
+    "consistency",
+    "resilience",
+    "search-filtering",
+    "notifications",
+    "payments",
+)
+
+_MAX_QA_RETRIES = 2
+
+_REQUIRED_TEST_CATEGORIES = {
+    "easy": (
+        "Happy path", "Not found", "Forbidden", "Validation",
+        "Boundary values", "State consistency", "Idempotency",
+    ),
+    "medium": (
+        "Happy path", "Not found", "Forbidden", "Validation",
+        "Boundary values", "State consistency", "Idempotency",
+        "Partial data", "Type edge cases",
+    ),
+    "hard": (
+        "Happy path", "Not found", "Forbidden", "Validation",
+        "Boundary values", "State consistency", "Idempotency",
+        "Partial data", "Type edge cases",
+        "Concurrency hints", "Infrastructure state", "Cascading failures",
+    ),
+}
+
+
+def _select_delta_prompt_name(language: str, scenario_type: str, check_mode: str) -> str:
+    """Phase 2b prompt selection. check_mode is orthogonal to scenario_type (implement/debug)
+    — a debug scenario can still be judge-graded. judge_function_{lang} handles both implement
+    and debug intent itself (via strip_description/bug_description), mirroring how
+    implement_function_{lang}/debug_function_{lang} already split.
+    """
+    if check_mode == "non_deterministic":
+        return f"judge_function_{language}"
+    if scenario_type == "debug":
+        return f"debug_function_{language}"
+    return f"implement_function_{language}"
 
 
 def _test_file_path(java_source: str) -> str | None:
@@ -1240,6 +1292,7 @@ class ScaffoldGenerator:
         tiers: list[str] | None = None,
         scenarios_per_tier: int = 3,
         debug_scenarios_per_tier: int = 1,
+        non_deterministic_scenarios_per_tier: int = 0,
         feedback: str | None = None,
     ) -> dict:
         """Run Phase 1 only — returns the DesignOutput as a dict for admin review."""
@@ -1255,6 +1308,8 @@ class ScaffoldGenerator:
             f"<tiers>{','.join(active_tiers)}</tiers>\n"
             f"<scenarios_per_tier>{scenarios_per_tier}</scenarios_per_tier>\n"
             f"<debug_scenarios_per_tier>{debug_scenarios_per_tier}</debug_scenarios_per_tier>\n"
+            f"<non_deterministic_scenarios_per_tier>{non_deterministic_scenarios_per_tier}</non_deterministic_scenarios_per_tier>\n"
+            f"<allowed_topics>{','.join(_TOPICS)}</allowed_topics>\n"
             f"<problem>\n{clean_description}\n</problem>"
             f"{feedback_block}"
         )
@@ -1274,6 +1329,7 @@ class ScaffoldGenerator:
         tiers: list[str] | None = None,
         scenarios_per_tier: int = 3,
         debug_scenarios_per_tier: int = 1,
+        non_deterministic_scenarios_per_tier: int = 0,
         design_json: str | dict | None = None,
     ) -> dict:
         active_languages: list[str] = languages or ["node"]
@@ -1309,6 +1365,7 @@ class ScaffoldGenerator:
                         "tiers": sorted(active_tiers),
                         "scenarios_per_tier": scenarios_per_tier,
                         "debug_scenarios_per_tier": debug_scenarios_per_tier,
+                        "non_deterministic_scenarios_per_tier": non_deterministic_scenarios_per_tier,
                     },
                     sort_keys=True,
                 ).encode()
@@ -1319,12 +1376,14 @@ class ScaffoldGenerator:
                 log.info("ScaffoldGenerator: Phase 1 cache hit — resuming without re-running design")
             else:
                 design_system = llm_client.load_prompt("design_challenge")
-                log.info(f"ScaffoldGenerator: Phase 1 (design, tiers={active_tiers}, scenarios_per_tier={scenarios_per_tier}, debug_scenarios_per_tier={debug_scenarios_per_tier})")
+                log.info(f"ScaffoldGenerator: Phase 1 (design, tiers={active_tiers}, scenarios_per_tier={scenarios_per_tier}, debug_scenarios_per_tier={debug_scenarios_per_tier}, non_deterministic_scenarios_per_tier={non_deterministic_scenarios_per_tier})")
                 design_user_msg = (
                     f"<languages>{','.join(active_languages)}</languages>\n"
                     f"<tiers>{','.join(active_tiers)}</tiers>\n"
                     f"<scenarios_per_tier>{scenarios_per_tier}</scenarios_per_tier>\n"
                     f"<debug_scenarios_per_tier>{debug_scenarios_per_tier}</debug_scenarios_per_tier>\n"
+                    f"<non_deterministic_scenarios_per_tier>{non_deterministic_scenarios_per_tier}</non_deterministic_scenarios_per_tier>\n"
+                    f"<allowed_topics>{','.join(_TOPICS)}</allowed_topics>\n"
                     f"<problem>\n{clean_description}\n</problem>"
                 )
                 raw_design = llm_client.complete_json(design_system, design_user_msg, label="design")
@@ -1569,6 +1628,7 @@ class ScaffoldGenerator:
 
             # Phase 2b — Function deltas per scenario
             tier_deltas: dict[str, dict[str, FunctionDeltaOutput]] = {}
+            tier_qa_reports: dict[str, dict[str, dict]] = {}
 
             for tier in active_tiers:
                 if tier in skipped_tiers:
@@ -1576,6 +1636,7 @@ class ScaffoldGenerator:
                 skeleton = tier_skeletons[tier]
                 tier_design = design.difficulty_tiers[tier]
                 tier_deltas[tier] = {}
+                tier_qa_reports[tier] = {}
 
                 for scenario in tier_design["scenarios"]:
                     tag = scenario["scenario_tag"]
@@ -1595,10 +1656,8 @@ class ScaffoldGenerator:
                         continue
 
                     scenario_type = scenario.get("type", "implement")
-                    prompt_name = (
-                        f"debug_function_{language}" if scenario_type == "debug"
-                        else f"implement_function_{language}"
-                    )
+                    check_mode = scenario.get("check_mode", "deterministic")
+                    prompt_name = _select_delta_prompt_name(language, scenario_type, check_mode)
                     function_system = llm_client.load_prompt(prompt_name)
                     stub_loc = skeleton.stub_locations.get(tag)
                     stub_file_content = (
@@ -1691,12 +1750,61 @@ class ScaffoldGenerator:
                                 f"How to fix: {targeted_hint}\n\n"
                                 f"Please return the corrected JSON with all issues resolved."
                             )
+
+                    # Phase 4 — LLM-judge QA gate. Runs once this delta compiles, before
+                    # gold-master merge/upload — cheapest point to catch a miscalibrated
+                    # scenario. Self-heals the same way the compile-retry loop above does:
+                    # feed the judge's findings back into a fresh delta call, capped, then
+                    # hard-fail the job if it still doesn't pass.
+                    qa_attempt = 0
+                    while True:
+                        qa_verdict = self._run_scenario_qa(language, tier, scenario, delta)
+                        if qa_verdict.overall_pass:
+                            break
+                        qa_attempt += 1
+                        if qa_attempt > _MAX_QA_RETRIES:
+                            error_msg = (
+                                f"ScaffoldGenerator: scenario QA failed after {_MAX_QA_RETRIES} "
+                                f"retries — lang={language}, scenario={tag}: {qa_verdict.findings} "
+                                f"(issues: {qa_verdict.test_issues})"
+                            )
+                            log.error(error_msg)
+                            raise RuntimeError(error_msg)
+                        log.warning(
+                            f"ScaffoldGenerator: scenario QA failed (attempt {qa_attempt}) — "
+                            f"lang={language}, scenario={tag}: {qa_verdict.findings}. Regenerating."
+                        )
+                        delta_user_context = (
+                            f"{user_context}\n\n"
+                            f"Your previous submission failed QA review:\n{qa_verdict.findings}\n"
+                            f"Specific issues: {qa_verdict.test_issues}\n\n"
+                            f"Please return corrected JSON addressing every issue above."
+                        )
+                        raw_delta = llm_client.complete_json(
+                            delta_system, delta_user_context,
+                            label=f"function-{language}-{tag}-qa-retry{qa_attempt}",
+                            max_tokens_override=settings.openai_max_tokens_test,
+                        )
+                        delta = validate_with_correction(
+                            raw_delta, FunctionDeltaOutput, llm_client.complete_json,
+                            delta_system, delta_user_context,
+                            label=f"function-{language}-{tag}-qa-retry{qa_attempt}-validate",
+                        )
+                        # Re-validate compilation for the regenerated delta before another QA pass
+                        test_files = self._inject_all_deltas(skeleton.files, {tag: delta}, language, skeleton)
+                        if language == "java":
+                            test_files = _fix_java_source_paths(test_files)
+                            test_files = _fix_java_imports(test_files)
+                        safe_test_files = sanitizer.sanitize_generated_files(test_files)
+                        compile_validator.validate_compilation(safe_test_files, language)
+
                     tier_deltas[tier][tag] = delta
+                    tier_qa_reports[tier][tag] = qa_verdict.model_dump()
                     cache_client.set(delta_cache_key, delta.model_dump_json(), expire=60 * 60 * 24)
                     log.info(f"ScaffoldGenerator: Phase 2b done — lang={language}, scenario={tag}")
 
             # Build manifest for this language
-            manifest = self._build_manifest(challenge_name, language, design, active_tiers)
+            manifest = self._build_manifest(challenge_name, language, design, active_tiers, tier_deltas, tier_qa_reports)
             all_manifests[language] = manifest
 
             # Upload gold masters + scaffold ZIPs
@@ -1907,23 +2015,84 @@ class ScaffoldGenerator:
                 "failed_blueprints": failed_blueprints,
             },
         }
+
+    def _run_scenario_qa(
+        self,
+        language: str,
+        tier: str,
+        scenario: dict,
+        delta: FunctionDeltaOutput,
+    ) -> JudgeQAOutput:
+        """Phase 4 — LLM-judge QA pass on a single generated scenario's delta.
+
+        Checks difficulty calibration, time calibration, topic correctness, and
+        test-case correctness/coverage (or rubric quality for judge-mode scenarios).
+        """
+        check_mode = scenario.get("check_mode", "deterministic")
+        if check_mode == "non_deterministic":
+            test_content = json.dumps(delta.rubric or [], indent=2)
+            required_categories = "N/A — check_mode is non_deterministic, review the rubric instead"
+        else:
+            test_content = (
+                f"=== test_hidden ===\n{delta.test_hidden}\n\n"
+                f"=== test_visible ===\n{delta.test_visible}"
+            )
+            required_categories = ", ".join(_REQUIRED_TEST_CATEGORIES.get(tier, ()))
+
+        qa_system = llm_client.load_prompt("judge_scenario_qa")
+        qa_user_context = (
+            f"<tier>{tier.upper()}</tier>\n"
+            f"<topic>{scenario.get('topic', '')}</topic>\n"
+            f"<allowed_topics>{','.join(_TOPICS)}</allowed_topics>\n"
+            f"<scenario_title>{scenario['title']}</scenario_title>\n"
+            f"<scenario_description>{scenario['description']}</scenario_description>\n"
+            f"<strip_description>{scenario.get('strip_description', '')}</strip_description>\n"
+            f"<bug_description>{scenario.get('bug_description', '')}</bug_description>\n"
+            f"<gold_master_function>\n{delta.function_body}\n</gold_master_function>\n"
+            f"<check_mode>{check_mode}</check_mode>\n"
+            f"<required_test_categories>{required_categories}</required_test_categories>\n"
+            f"<test_content>\n{test_content}\n</test_content>"
+        )
+        raw_qa = llm_client.complete_json(
+            qa_system, qa_user_context,
+            label=f"judge-qa-{language}-{scenario['scenario_tag']}",
+        )
+        return validate_with_correction(
+            raw_qa, JudgeQAOutput, llm_client.complete_json,
+            qa_system, qa_user_context,
+            label=f"judge-qa-{language}-{scenario['scenario_tag']}-validate",
+        )
+
     def _build_manifest(
         self,
         challenge_name: str,
         language: str,
         design: DesignOutput,
         active_tiers: list[str] | None = None,
+        tier_deltas: dict[str, dict] | None = None,
+        tier_qa_reports: dict[str, dict] | None = None,
     ) -> dict:
         tiers_to_use = active_tiers or list(_TIERS)
+        tier_deltas = tier_deltas or {}
+        tier_qa_reports = tier_qa_reports or {}
         scenarios = {}
         for tier in tiers_to_use:
             for scenario in design.difficulty_tiers[tier]["scenarios"]:
-                scenarios[scenario["scenario_tag"]] = {
+                tag = scenario["scenario_tag"]
+                check_mode = scenario.get("check_mode", "deterministic")
+                entry = {
                     "title": scenario["title"],
                     "description": scenario["description"],
                     "tier": tier,
                     "type": scenario.get("type", "implement"),
+                    "check_mode": check_mode,
+                    "topic": scenario.get("topic"),
+                    "qa_report": tier_qa_reports.get(tier, {}).get(tag),
                 }
+                if check_mode == "non_deterministic":
+                    delta = tier_deltas.get(tier, {}).get(tag)
+                    entry["rubric"] = delta.rubric if delta else None
+                scenarios[tag] = entry
         return {
             "challenge": challenge_name,
             "language": language,
